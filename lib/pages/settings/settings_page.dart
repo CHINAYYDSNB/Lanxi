@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/health_provider.dart';
 import '../../api/client.dart';
 import '../../services/storage_service.dart';
+import '../../services/update_service.dart';
+import '../../utils/url_launcher.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -18,7 +20,7 @@ class _SettingsPageState extends State<SettingsPage>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -37,6 +39,7 @@ class _SettingsPageState extends State<SettingsPage>
           tabs: const [
             Tab(icon: Icon(Icons.monitor_heart), text: '健康检测'),
             Tab(icon: Icon(Icons.wifi_find), text: '连接检测'),
+            Tab(icon: Icon(Icons.info_outline), text: '关于'),
           ],
         ),
       ),
@@ -45,6 +48,7 @@ class _SettingsPageState extends State<SettingsPage>
         children: const [
           _HealthTab(),
           _ConnectionTab(),
+          _AboutTab(),
         ],
       ),
     );
@@ -281,6 +285,147 @@ class _HealthCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════
+// 关于 Tab — 版本 + GitHub 更新
+// ═══════════════════════════════════════════
+
+class _AboutTab extends StatefulWidget {
+  const _AboutTab();
+
+  @override
+  State<_AboutTab> createState() => _AboutTabState();
+}
+
+class _AboutTabState extends State<_AboutTab> {
+  bool _checking = false;
+  ({String tag, String url, bool newer})? _result;
+  String? _error;
+
+  Future<void> _checkUpdate() async {
+    setState(() { _checking = true; _error = null; _result = null; });
+    try {
+      final r = await UpdateService.check();
+      if (!mounted) return;
+      setState(() { _result = r; _checking = false; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _error = e.toString(); _checking = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // App icon + name
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Icon(Icons.dashboard_customize, size: 64, color: theme.colorScheme.primary),
+                const SizedBox(height: 12),
+                Text('Tianxuan', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                Text('1Panel 第三方管理器', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.tag, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(UpdateService.currentVersion, style: theme.textTheme.titleMedium),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Update check
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Text('版本更新', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 16),
+
+                if (_result != null) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _result!.newer ? Icons.system_update : Icons.check_circle,
+                        color: _result!.newer ? Colors.orange : Colors.green,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _result!.newer ? '新版本可用: ${_result!.tag}' : '已是最新版本',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (_result!.newer)
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => _openUrl(_result!.url),
+                        icon: const Icon(Icons.open_in_new),
+                        label: const Text('前往下载'),
+                      ),
+                    ),
+                ],
+
+                if (_error != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(_error!, style: TextStyle(fontSize: 12, color: theme.colorScheme.onErrorContainer)),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _checking ? null : _checkUpdate,
+                    icon: _checking
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh),
+                    label: Text(_checking ? '检查中...' : '检查更新'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // GitHub link
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.code),
+            title: const Text('GitHub'),
+            subtitle: const Text('CHINAYYDSNB/Tianxuan_panel'),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () => _openUrl(UpdateService.repoUrl),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _openUrl(String url) => openUrl(url);
 }
 
 // ═══════════════════════════════════════════

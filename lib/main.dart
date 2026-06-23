@@ -4,7 +4,7 @@ import 'providers/settings_provider.dart';
 import 'services/storage_service.dart';
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
-// import 'pages/logto_login_page.dart'; // 暂时禁用 Logto 登录
+import 'pages/logto_login_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,9 +24,10 @@ class OnePanelApp extends StatelessWidget {
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
           useMaterial3: true,
         ),
-        initialRoute: '/init',
+        // LogtoLoginPage wraps the initial route so it gates app access
+        // inside MaterialApp where Theme/MediaQuery are available
+        home: const LogtoLoginPage(child: InitPage()),
         routes: {
-          '/init': (context) => const InitPage(),
           '/login': (context) => const LoginPage(),
           '/home': (context) => const HomePage(),
         },
