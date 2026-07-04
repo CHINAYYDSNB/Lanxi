@@ -7,6 +7,7 @@ import '../../services/storage_service.dart';
 import '../../services/logto_service.dart';
 import '../../services/update_service.dart';
 import '../../utils/url_launcher.dart';
+import 'cloud_backup_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -22,7 +23,7 @@ class _SettingsPageState extends State<SettingsPage>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -41,6 +42,7 @@ class _SettingsPageState extends State<SettingsPage>
           tabs: const [
             Tab(icon: Icon(Icons.monitor_heart), text: '健康检测'),
             Tab(icon: Icon(Icons.wifi_find), text: '连接检测'),
+            Tab(icon: Icon(Icons.cloud), text: '云备份'),
             Tab(icon: Icon(Icons.info_outline), text: '关于'),
           ],
         ),
@@ -50,6 +52,7 @@ class _SettingsPageState extends State<SettingsPage>
         children: const [
           _HealthTab(),
           _ConnectionTab(),
+          CloudBackupPage(),
           _AboutTab(),
         ],
       ),
@@ -123,34 +126,40 @@ class _HealthTab extends ConsumerWidget {
                   _ThresholdSlider(
                     label: 'CPU 警告',
                     value: thresholds.cpuWarning.toDouble(),
-                    onChanged: (v) => _updateThreshold(ref, thresholds, cpuWarning: v.toInt()),
+                    onChanged: (v) => _updateThresholdLive(ref, thresholds, cpuWarning: v.toInt()),
+                    onChangeEnd: (v) => _updateThresholdFinal(ref, thresholds, cpuWarning: v.toInt()),
                   ),
                   _ThresholdSlider(
                     label: 'CPU 严重',
                     value: thresholds.cpuCritical.toDouble(),
-                    onChanged: (v) => _updateThreshold(ref, thresholds, cpuCritical: v.toInt()),
+                    onChanged: (v) => _updateThresholdLive(ref, thresholds, cpuCritical: v.toInt()),
+                    onChangeEnd: (v) => _updateThresholdFinal(ref, thresholds, cpuCritical: v.toInt()),
                   ),
                   const Divider(height: 24),
                   _ThresholdSlider(
                     label: '内存 警告',
                     value: thresholds.memWarning.toDouble(),
-                    onChanged: (v) => _updateThreshold(ref, thresholds, memWarning: v.toInt()),
+                    onChanged: (v) => _updateThresholdLive(ref, thresholds, memWarning: v.toInt()),
+                    onChangeEnd: (v) => _updateThresholdFinal(ref, thresholds, memWarning: v.toInt()),
                   ),
                   _ThresholdSlider(
                     label: '内存 严重',
                     value: thresholds.memCritical.toDouble(),
-                    onChanged: (v) => _updateThreshold(ref, thresholds, memCritical: v.toInt()),
+                    onChanged: (v) => _updateThresholdLive(ref, thresholds, memCritical: v.toInt()),
+                    onChangeEnd: (v) => _updateThresholdFinal(ref, thresholds, memCritical: v.toInt()),
                   ),
                   const Divider(height: 24),
                   _ThresholdSlider(
                     label: '磁盘 警告',
                     value: thresholds.diskWarning.toDouble(),
-                    onChanged: (v) => _updateThreshold(ref, thresholds, diskWarning: v.toInt()),
+                    onChanged: (v) => _updateThresholdLive(ref, thresholds, diskWarning: v.toInt()),
+                    onChangeEnd: (v) => _updateThresholdFinal(ref, thresholds, diskWarning: v.toInt()),
                   ),
                   _ThresholdSlider(
                     label: '磁盘 严重',
                     value: thresholds.diskCritical.toDouble(),
-                    onChanged: (v) => _updateThreshold(ref, thresholds, diskCritical: v.toInt()),
+                    onChanged: (v) => _updateThresholdLive(ref, thresholds, diskCritical: v.toInt()),
+                    onChangeEnd: (v) => _updateThresholdFinal(ref, thresholds, diskCritical: v.toInt()),
                   ),
                 ],
               ),
@@ -186,7 +195,7 @@ class _HealthTab extends ConsumerWidget {
     );
   }
 
-  void _updateThreshold(WidgetRef ref, HealthThresholds t,
+  void _updateThresholdLive(WidgetRef ref, HealthThresholds t,
       {int? cpuWarning, int? cpuCritical, int? memWarning, int? memCritical,
        int? diskWarning, int? diskCritical}) {
     ref.read(healthThresholdsProvider.notifier).state = t.copyWith(
@@ -194,7 +203,17 @@ class _HealthTab extends ConsumerWidget {
       memWarning: memWarning, memCritical: memCritical,
       diskWarning: diskWarning, diskCritical: diskCritical,
     );
-    // 触发重检
+  }
+
+  void _updateThresholdFinal(WidgetRef ref, HealthThresholds t,
+      {int? cpuWarning, int? cpuCritical, int? memWarning, int? memCritical,
+       int? diskWarning, int? diskCritical}) {
+    _updateThresholdLive(ref, t,
+      cpuWarning: cpuWarning, cpuCritical: cpuCritical,
+      memWarning: memWarning, memCritical: memCritical,
+      diskWarning: diskWarning, diskCritical: diskCritical,
+    );
+    // 拖完才触发重检
     ref.read(healthProvider.notifier).refresh();
   }
 }
@@ -203,8 +222,12 @@ class _ThresholdSlider extends StatelessWidget {
   final String label;
   final double value;
   final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
 
-  const _ThresholdSlider({required this.label, required this.value, required this.onChanged});
+  const _ThresholdSlider({
+    required this.label, required this.value, required this.onChanged,
+    this.onChangeEnd,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -221,6 +244,7 @@ class _ThresholdSlider extends StatelessWidget {
               divisions: 49,
               label: '${value.toInt()}%',
               onChanged: onChanged,
+              onChangeEnd: onChangeEnd ?? onChanged,
             ),
           ),
           SizedBox(width: 40, child: Text('${value.toInt()}%', textAlign: TextAlign.right)),

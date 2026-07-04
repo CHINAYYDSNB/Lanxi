@@ -197,4 +197,20 @@ class StorageService {
     await _delete('logto_id');
     await _delete('logto_exp');
   }
+
+  // ─── SSH 连接保存 ───
+
+  Future<void> saveSshConnections(List<Map<String, dynamic>> connections) async {
+    await _write('ssh_connections', jsonEncode(connections));
+  }
+
+  Future<List<Map<String, dynamic>>?> getSshConnections() async {
+    final raw = await _read('ssh_connections');
+    if (raw == null) return null;
+    try {
+      return (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    } catch (_) {
+      return null;
+    }
+  }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Combined static file server + API proxy for Tianxuan Flutter app
-// Serves Flutter web build, proxies /api/v2/* to 1Panel server
+// Combined static file server + API proxy + SSH WebSocket proxy for Tianxuan Flutter app
+// Serves Flutter web build, proxies /api/v2/* to 1Panel server, proxies SSH via WebSocket
 //
 // Usage:
 //   node server.mjs
@@ -14,6 +14,8 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { WebSocketServer } from 'ws';
+import { Client } from 'ssh2';
 
 // Load .env file if exists
 const envPath = path.resolve(import.meta.dirname, '.env');
@@ -59,7 +61,6 @@ function serveStatic(req, res) {
   const ct = MIME[ext] || 'application/octet-stream';
   try {
     let content = fs.readFileSync(absPath);
-    // Dev helper: inject localStorage config to skip login page
     if (filePath === '/index.html' && API_KEY) {
       const inject = `<script>
 localStorage.setItem('server_url','http://localhost:${PORT}');
@@ -99,16 +100,116 @@ function proxyAPI(req, res) {
   req.pipe(proxyReq);
 }
 
-http.createServer((req, res) => {
+// ─── HTTP Server (static + API proxy) ───
+const server = http.createServer((req, res) => {
   if (req.url.startsWith('/api/v2/')) {
     proxyAPI(req, res);
   } else {
     serveStatic(req, res);
   }
-}).listen(PORT, '127.0.0.1', () => {
+});
+
+// ─── SSH WebSocket Proxy ───
+const wss = new WebSocketServer({ server, path: '/ssh-proxy' });
+
+wss.on('connection', (ws, req) => {
+  console.log('[ssh] WebSocket connected');
+
+  let sshConfig = null;
+  let sshClient = null;
+  let sshStream = null;
+  let shellOpts = { cols: 80, rows: 24 };
+
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+
+      if (msg.type === 'connect') {
+        // First message: SSH connection config
+        sshConfig = msg;
+        sshClient = new Client();
+
+        sshClient.on('ready', () => {
+          console.log('[ssh] Connected to ' + sshConfig.host);
+          sshClient.shell(shellOpts, (err, stream) => {
+            if (err) {
+              ws.send(JSON.stringify({ type: 'error', message: err.message }));
+              return;
+            }
+            sshStream = stream;
+
+            stream.on('data', (chunk) => {
+              ws.send(JSON.stringify({ type: 'data', data: chunk.toString('base64') }));
+            });
+
+            stream.stderr.on('data', (chunk) => {
+              ws.send(JSON.stringify({ type: 'data', data: chunk.toString('base64') }));
+            });
+
+            stream.on('close', () => {
+              console.log('[ssh] Shell closed');
+              ws.send(JSON.stringify({ type: 'close' }));
+            });
+
+            ws.send(JSON.stringify({ type: 'ready' }));
+          });
+        });
+
+        sshClient.on('error', (err) => {
+          console.error('[ssh] Error:', err.message);
+          ws.send(JSON.stringify({ type: 'error', message: err.message }));
+        });
+
+        sshClient.on('close', () => {
+          console.log('[ssh] Connection closed');
+          ws.close();
+        });
+
+        const connectOpts = {
+          host: sshConfig.host,
+          port: sshConfig.port || 22,
+          username: sshConfig.username,
+          readyTimeout: 10000,
+          tryKeyboard: true,
+        };
+        if (sshConfig.password) connectOpts.password = sshConfig.password;
+        if (sshConfig.privateKey) connectOpts.privateKey = sshConfig.privateKey;
+
+        sshClient.on('keyboard-interactive', (name, instructions, instructionsLang, prompts, finish) => {
+          const password = sshConfig.password || '';
+          finish([password]);
+        });
+
+        sshClient.connect(connectOpts);
+
+      } else if (msg.type === 'resize') {
+        shellOpts = { cols: msg.cols || 80, rows: msg.rows || 24 };
+        if (sshStream) sshStream.setWindow(shellOpts.rows, shellOpts.cols, 0, 0);
+
+      } else if (msg.type === 'input') {
+        if (sshStream && msg.data) {
+          sshStream.write(Buffer.from(msg.data, 'base64'));
+        }
+      }
+    } catch (e) {
+      console.error('[ssh] Message error:', e.message);
+    }
+  });
+
+  ws.on('close', () => {
+    console.log('[ssh] WebSocket disconnected');
+    if (sshStream) sshStream.close();
+    if (sshClient) sshClient.end();
+  });
+
+  ws.on('error', () => {});
+});
+
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`Tianxuan app → http://localhost:${PORT}`);
   console.log(`Static: ${STATIC_DIR}`);
   console.log(`API proxy: → ${API_HOST}:${API_PORT}`);
+  console.log(`SSH proxy: ws://localhost:${PORT}/ssh-proxy`);
   if (API_KEY) console.log('Auto-login: enabled (API_KEY set)');
   else         console.log('Auto-login: disabled (use login page)');
   console.log('\nOpen http://localhost:' + PORT + ' in your browser.');

@@ -24,8 +24,8 @@ class ApiClient {
   void _configure(String serverUrl, String apiKey) {
     _serverUrl = serverUrl;
     _authInterceptor.setApiKey(apiKey);
-    _dio.options.connectTimeout = const Duration(seconds: 15);
-    _dio.options.receiveTimeout = const Duration(seconds: 15);
+    _dio.options.connectTimeout = const Duration(seconds: 30);
+    _dio.options.receiveTimeout = const Duration(seconds: 30);
     _dio.options.responseType = ResponseType.json;
     debugPrint('ApiClient configured: serverUrl=$serverUrl, apiKey=${apiKey.substring(0, 4)}...');
   }

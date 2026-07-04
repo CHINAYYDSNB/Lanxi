@@ -4,6 +4,7 @@ import 'file/file_list_page.dart';
 import 'website/website_list_page.dart';
 import 'docker/docker_home_page.dart';
 import 'settings/settings_page.dart';
+import 'ssh/ssh_home_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -20,8 +21,13 @@ class _HomePageState extends State<HomePage> {
     FileListPage(),
     WebsiteListPage(),
     DockerHomePage(),
+    SshHomePage(),
     SettingsPage(),
   ];
+
+  void _onTap(int i) {
+    setState(() => _currentIndex = i);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +35,7 @@ class _HomePageState extends State<HomePage> {
       body: IndexedStack(index: _currentIndex, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
+        onDestinationSelected: _onTap,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
@@ -50,6 +56,11 @@ class _HomePageState extends State<HomePage> {
             icon: Icon(Icons.view_in_ar_outlined),
             selectedIcon: Icon(Icons.view_in_ar),
             label: '容器',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.terminal),
+            selectedIcon: Icon(Icons.terminal),
+            label: 'SSH',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
