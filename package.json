@@ -1,5 +1,9 @@
 {
   "devDependencies": {
     "sharp": "^0.35.2"
+  },
+  "dependencies": {
+    "ssh2": "^1.17.0",
+    "ws": "^8.21.0"
   }
 }
