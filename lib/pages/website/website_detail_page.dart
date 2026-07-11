@@ -139,6 +139,11 @@ class _DetailContentState extends ConsumerState<_DetailContent>
                       onPressed: () => _downloadConfig(context, w),
                     ),
                     _ActionChip(
+                      icon: Icons.edit,
+                      label: '编辑配置',
+                      onPressed: () => _editConfig(context, w),
+                    ),
+                    _ActionChip(
                       icon: Icons.delete_outline,
                       label: '删除',
                       color: Colors.red,
@@ -250,6 +255,7 @@ class _DetailContentState extends ConsumerState<_DetailContent>
         const SnackBar(content: Text('正在获取配置...')),
       );
       final config = await WebsiteApi.getConfig(w.id, scope: 'all');
+      if (!mounted) return;
       if (config == null || config.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -293,6 +299,45 @@ class _DetailContentState extends ConsumerState<_DetailContent>
       return s.substring(0, 10);
     } catch (_) {
       return s;
+    }
+  }
+
+  Future<void> _editConfig(BuildContext context, Website w) async {
+    try {
+      final config = await WebsiteApi.getConfig(w.id, scope: 'all');
+      if (!mounted) return;
+      final ctrl = TextEditingController(text: config ?? '');
+      final saved = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('编辑 ${w.alias} Nginx 配置'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: TextField(
+              controller: ctrl,
+              maxLines: null,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.all(12),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('保存')),
+          ],
+        ),
+      );
+      if (saved == null || !mounted) return;
+      await WebsiteApi.updateNginx(w.id, saved);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('配置已保存')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('编辑配置失败: $e')));
+      }
     }
   }
 }
@@ -432,13 +477,71 @@ class _OverviewTab extends StatelessWidget {
   }
 }
 
-class _SslTab extends ConsumerWidget {
+class _SslTab extends ConsumerStatefulWidget {
   final int websiteId;
   const _SslTab({required this.websiteId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final httpsAsync = ref.watch(websiteHttpsProvider(websiteId));
+  ConsumerState<_SslTab> createState() => _SslTabState();
+}
+
+class _SslTabState extends ConsumerState<_SslTab> {
+  Future<void> _applyLetsEncrypt() async {
+    final emailCtrl = TextEditingController();
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("申请 Let's Encrypt"),
+        content: TextField(
+          controller: emailCtrl,
+          decoration: const InputDecoration(
+            labelText: '邮箱地址', hintText: 'admin@example.com',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, emailCtrl.text), child: const Text('申请')),
+        ],
+      ),
+    );
+    if (email == null || email.isEmpty || !mounted) return;
+    try {
+      await WebsiteApi.updateHttps(widget.websiteId, {
+        'enable': true, 'type': 'letsencrypt', 'email': email, 'primaryDomain': '',
+      });
+      if (mounted) {
+        ref.invalidate(websiteHttpsProvider(widget.websiteId));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已提交申请')));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('失败: $e')));
+    }
+  }
+
+  Future<void> _uploadCert() async {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请使用 1Panel 管理页面上传证书')),
+      );
+    }
+  }
+
+  Future<void> _toggleHttps(bool enable) async {
+    try {
+      await WebsiteApi.updateHttps(widget.websiteId, {'enable': enable});
+      if (mounted) {
+        ref.invalidate(websiteHttpsProvider(widget.websiteId));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(enable ? '已启用 HTTPS' : '已禁用 HTTPS')));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('失败: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final httpsAsync = ref.watch(websiteHttpsProvider(widget.websiteId));
     return httpsAsync.when(
       data: (data) {
         final enable = data['enable'] == true;
@@ -462,8 +565,7 @@ class _SslTab extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('证书信息',
-                          style: Theme.of(context).textTheme.titleSmall),
+                      Text('证书信息', style: Theme.of(context).textTheme.titleSmall),
                       const Divider(),
                       _info('域名', ssl['primaryDomain']?.toString() ?? '-'),
                       _info('颁发者', ssl['provider']?.toString() ?? '-'),
@@ -475,6 +577,36 @@ class _SslTab extends ConsumerWidget {
                 ),
               ),
             ],
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('操作', style: Theme.of(context).textTheme.titleSmall),
+                    const Divider(),
+                    SizedBox(width: double.infinity, child: FilledButton.icon(
+                      onPressed: _applyLetsEncrypt,
+                      icon: const Icon(Icons.security),
+                      label: const Text("申请 Let's Encrypt"),
+                    )),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: OutlinedButton.icon(
+                      onPressed: _uploadCert,
+                      icon: const Icon(Icons.upload_file),
+                      label: const Text('上传证书'),
+                    )),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: TextButton.icon(
+                      onPressed: () => _toggleHttps(!enable),
+                      icon: Icon(enable ? Icons.lock_open : Icons.lock),
+                      label: Text(enable ? '禁用 HTTPS' : '启用 HTTPS'),
+                    )),
+                  ],
+                ),
+              ),
+            ),
           ],
         );
       },
@@ -489,8 +621,7 @@ class _SslTab extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 80, child: Text(label,
-              style: const TextStyle(color: Colors.grey, fontSize: 13))),
+          SizedBox(width: 80, child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13))),
           Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
         ],
       ),

@@ -14,6 +14,7 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { WebSocketServer } from 'ws';
 import { Client } from 'ssh2';
 
@@ -100,9 +101,48 @@ function proxyAPI(req, res) {
   req.pipe(proxyReq);
 }
 
+// ─── 脚本执行 API ───
+async function handleScriptExec(req, res) {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', () => {
+    try {
+      const { path: scriptPath, content } = JSON.parse(body);
+      const absPath = path.resolve(scriptPath);
+      if (content) fs.writeFileSync(absPath, content, 'utf-8');
+      fs.chmodSync(absPath, 0o755);
+      const out = execSync(`cd ${path.dirname(absPath)} && ./${path.basename(absPath)}`, {
+        timeout: 60000, encoding: 'utf-8',
+      });
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(out);
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end(e.stderr || e.message || String(e));
+    }
+  });
+}
+
 // ─── HTTP Server (static + API proxy) ───
 const server = http.createServer((req, res) => {
-  if (req.url.startsWith('/api/v2/')) {
+  if (req.method === 'POST' && req.url === '/api/script/exec') {
+    handleScriptExec(req, res);
+  } else if (req.url === '/api/script/index') {
+    const u = 'https://raw.githubusercontent.com/CHINAYYDSNB/Tianxuan/main/scripts/index.json';
+    http.get(u, pr => { res.writeHead(pr.statusCode, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'}); pr.pipe(res); })
+      .on('error', e => { res.writeHead(502); res.end(JSON.stringify({error:e.message})); });
+  } else if (req.url.startsWith('/api/script/detail/')) {
+    const id = req.url.split('/').pop();
+    const u = `https://raw.githubusercontent.com/CHINAYYDSNB/Tianxuan/main/scripts/details/${id}.json`;
+    http.get(u, pr => { res.writeHead(pr.statusCode, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'}); pr.pipe(res); })
+      .on('error', e => { res.writeHead(502); res.end(JSON.stringify({error:e.message})); });
+  } else if (req.url.startsWith('/api/script-download')) {
+    const up = new URL(req.url, `http://${req.headers.host}`);
+    const target = decodeURIComponent(up.searchParams.get('url') || '');
+    if (!target) { res.writeHead(400); res.end('Missing url'); return; }
+    http.get(target, (pr) => { res.writeHead(pr.statusCode, {'Access-Control-Allow-Origin':'*'}); pr.pipe(res); })
+      .on('error', e => { res.writeHead(502); res.end(e.message); });
+  } else if (req.url.startsWith('/api/v2/')) {
     proxyAPI(req, res);
   } else {
     serveStatic(req, res);

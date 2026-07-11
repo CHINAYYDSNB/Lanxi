@@ -16,7 +16,7 @@ class SshService {
   static String buildProxyUrl(String serverUrl) {
     final uri = Uri.parse(serverUrl);
     final scheme = uri.scheme == 'https' ? 'wss' : 'ws';
-    return '$scheme://${uri.host}:25569/';
+    return '$scheme://${uri.host}:25569/ssh-proxy';
   }
 
   Future<void> connect({
@@ -28,7 +28,7 @@ class SshService {
     String? proxyUrl,
   }) async {
     if (proxyUrl == null || proxyUrl.isEmpty) {
-      proxyUrl = 'ws://localhost:25568/ssh-proxy';
+      proxyUrl = 'ws://localhost:25569/ssh-proxy';
     }
 
     try {

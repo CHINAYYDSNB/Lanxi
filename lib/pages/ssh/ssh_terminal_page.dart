@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:xterm/ui.dart';
-import 'package:xterm/xterm.dart';
 import '../../services/ssh_service.dart';
-import '../../services/storage_service.dart';
+import '../../stubs/xterm_stub.dart';
 
 class SshTerminalPage extends StatefulWidget {
   final String host;
@@ -84,15 +82,6 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
   }
 
   Future<void> _connect() async {
-    // 获取 proxy URL (APK 连服务器, Web 连本地)
-    String? proxyUrl;
-    try {
-      final serverUrl = await StorageService.instance.getServerUrl();
-      if (serverUrl != null && serverUrl.isNotEmpty) {
-        proxyUrl = SshService.buildProxyUrl(serverUrl);
-      }
-    } catch (_) {}
-
     try {
       await _sshService.connect(
         host: widget.host,
@@ -100,7 +89,6 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
         username: widget.username,
         password: widget.password,
         privateKey: widget.privateKey,
-        proxyUrl: proxyUrl,
       );
     } catch (e) {
       if (mounted) setState(() {

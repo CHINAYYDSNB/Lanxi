@@ -53,6 +53,16 @@ class _FileListPageState extends ConsumerState<FileListPage> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          icon: const Icon(Icons.home_outlined),
+          tooltip: '回到概览',
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            }
+          },
+        ),
         title: _showSearch
             ? TextField(
                 controller: _searchCtrl,

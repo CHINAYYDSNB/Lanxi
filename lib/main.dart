@@ -4,7 +4,6 @@ import 'providers/settings_provider.dart';
 import 'services/storage_service.dart';
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
-import 'pages/logto_login_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,9 +23,7 @@ class OnePanelApp extends StatelessWidget {
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
           useMaterial3: true,
         ),
-        // LogtoLoginPage wraps the initial route so it gates app access
-        // inside MaterialApp where Theme/MediaQuery are available
-        home: const LogtoLoginPage(child: InitPage()),
+        home: const InitPage(),
         routes: {
           '/login': (context) => const LoginPage(),
           '/home': (context) => const HomePage(),
@@ -47,10 +44,10 @@ class _InitPageState extends ConsumerState<InitPage> {
   void initState() {
     super.initState();
     Future.microtask(() => _checkConfig());
-    // Safety timeout: if config check doesn't complete, go to login
+    // Safety timeout: fallback to home
     Future.delayed(const Duration(seconds: 5), () {
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushReplacementNamed(context, '/home');
       }
     });
   }
@@ -60,15 +57,13 @@ class _InitPageState extends ConsumerState<InitPage> {
       final settings = ref.read(settingsProvider.notifier);
       await settings.init();
       if (!mounted) return;
-      if (ref.read(settingsProvider).isConnected) {
-        Navigator.pushReplacementNamed(context, '/home');
-      } else {
-        Navigator.pushReplacementNamed(context, '/login');
-      }
+      // 不管有没有服务器配置，先进 home
+      // 未配置时进入后部分页面不可用，但 AI/设置 可用
+      Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
       debugPrint('InitPage._checkConfig error: $e');
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushReplacementNamed(context, '/home');
       }
     }
   }

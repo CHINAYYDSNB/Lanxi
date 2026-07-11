@@ -33,4 +33,23 @@ class AppStoreApi {
   static Future<void> syncRemote() async {
     await ApiClient.instance.post('/apps/sync/remote');
   }
+
+  /// Get default compose / params for an app
+  static Future<String?> fetchCompose(String key, String version) async {
+    try {
+      final res = await ApiClient.instance.post('/apps/install/conf', data: {
+        'key': key,
+        'version': version,
+      });
+      final data = res.data['data'];
+      if (data is Map) {
+        if (data['dockerCompose'] != null) return data['dockerCompose'].toString();
+        if (data['compose'] != null) return data['compose'].toString();
+      }
+      if (data is String) return data;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 }

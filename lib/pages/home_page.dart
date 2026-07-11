@@ -1,72 +1,133 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/ai_config.dart';
+import '../providers/ai_provider.dart';
+import '../providers/settings_provider.dart';
+import 'ai/ai_chat_page.dart';
 import 'dashboard/dashboard_page.dart';
 import 'file/file_list_page.dart';
 import 'website/website_list_page.dart';
 import 'docker/docker_home_page.dart';
+import 'script_store/script_store_page.dart';
 import 'settings/settings_page.dart';
 import 'ssh/ssh_home_page.dart';
 
-class HomePage extends StatefulWidget {
+/// 未连接时阻止 API 请求, 显示添加按钮
+class _Guard extends ConsumerWidget {
+  final Widget child;
+  const _Guard(this.child);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final connected = ref.watch(settingsProvider.select((s) => s.isConnected));
+    if (connected) return child;
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.cloud_off, size: 48, color: theme.colorScheme.outline),
+          const SizedBox(height: 12),
+          Text('未连接服务器', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text('请先添加 1Panel 服务器',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pushNamed('/login'),
+            icon: const Icon(Icons.add),
+            label: const Text('添加服务器'),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  ConsumerState<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  int _currentIndex = 0;
+class _HomePageState extends ConsumerState<HomePage> {
+  int _stackIdx = 0;
+  bool _fabOpenedAi = false;
+  bool _isFloating = false;
 
-  final _pages = const [
-    DashboardPage(),
-    FileListPage(),
-    WebsiteListPage(),
-    DockerHomePage(),
-    SshHomePage(),
-    SettingsPage(),
-  ];
+  late final List<Widget> _stablePages;
 
-  void _onTap(int i) {
-    setState(() => _currentIndex = i);
+  @override
+  void initState() {
+    super.initState();
+    _buildPages();
+    ref.listenManual(aiConfigProvider.select((c) => c.entryMode), (prev, next) {
+      final f = next == AiEntryMode.floating;
+      if (f != _isFloating) {
+        _isFloating = f;
+        _buildPages();
+        setState(() {});
+      }
+    });
   }
+
+  void _buildPages() {
+    final ai = AiChatPage(onClose: _isFloating ? _closeAi : null);
+    _stablePages = [
+      _Guard(DashboardPage()),
+      _Guard(FileListPage()),
+      _Guard(WebsiteListPage()),
+      _Guard(DockerHomePage()),
+      ScriptStorePage(),
+      ai,
+      SshHomePage(),
+      SettingsPage(),
+    ];
+  }
+
+  int _navToStack(int navIdx) => _isFloating && navIdx >= 5 ? navIdx + 1 : navIdx;
+  int _stackToNav(int stackIdx) {
+    if (!_isFloating) return stackIdx;
+    if (stackIdx == 5) return 0;
+    return stackIdx > 5 ? stackIdx - 1 : stackIdx;
+  }
+
+  void _onTapNav(int navIdx) {
+    setState(() { _fabOpenedAi = false; _stackIdx = _navToStack(navIdx); });
+  }
+
+  void _openAi() => setState(() { _stackIdx = 5; _fabOpenedAi = true; });
+  void _closeAi() => setState(() { _fabOpenedAi = false; _stackIdx = 0; });
 
   @override
   Widget build(BuildContext context) {
+    final showAiTab = !_isFloating;
+    final showIdx = (!showAiTab && !_fabOpenedAi && _stackIdx == 5) ? 6 : _stackIdx;
+    final navIdx = _stackToNav(showIdx);
+
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: _pages),
+      body: IndexedStack(index: showIdx, children: _stablePages),
+      floatingActionButton: _isFloating && showIdx < 4
+          ? FloatingActionButton(
+              onPressed: _openAi,
+              tooltip: 'AI 助手',
+              child: const Icon(Icons.auto_awesome),
+            )
+          : null,
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: _onTap,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: '概览',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder),
-            label: '文件',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.language_outlined),
-            selectedIcon: Icon(Icons.language),
-            label: '网站',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.view_in_ar_outlined),
-            selectedIcon: Icon(Icons.view_in_ar),
-            label: '容器',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.terminal),
-            selectedIcon: Icon(Icons.terminal),
-            label: 'SSH',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '设置',
-          ),
+        selectedIndex: navIdx,
+        onDestinationSelected: _onTapNav,
+        destinations: [
+          const NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: '概览'),
+          const NavigationDestination(icon: Icon(Icons.folder_outlined), selectedIcon: Icon(Icons.folder), label: '文件'),
+          const NavigationDestination(icon: Icon(Icons.language_outlined), selectedIcon: Icon(Icons.language), label: '网站'),
+          const NavigationDestination(icon: Icon(Icons.view_in_ar_outlined), selectedIcon: Icon(Icons.view_in_ar), label: '容器'),
+          const NavigationDestination(icon: Icon(Icons.store_outlined), selectedIcon: Icon(Icons.store), label: '商店'),
+          if (showAiTab)
+            const NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'AI'),
+          const NavigationDestination(icon: Icon(Icons.terminal), selectedIcon: Icon(Icons.terminal), label: 'SSH'),
+          const NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: '设置'),
         ],
       ),
     );

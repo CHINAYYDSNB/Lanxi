@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../providers/health_provider.dart';
+import '../../providers/ai_provider.dart';
+import '../../models/ai_config.dart';
+import '../../providers/settings_provider.dart';
 import '../../api/client.dart';
 import '../../services/storage_service.dart';
 import '../../services/logto_service.dart';
@@ -23,7 +26,7 @@ class _SettingsPageState extends State<SettingsPage>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 4, vsync: this);
+    _tabCtrl = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -43,6 +46,7 @@ class _SettingsPageState extends State<SettingsPage>
             Tab(icon: Icon(Icons.monitor_heart), text: '健康检测'),
             Tab(icon: Icon(Icons.wifi_find), text: '连接检测'),
             Tab(icon: Icon(Icons.cloud), text: '云备份'),
+            Tab(icon: Icon(Icons.smart_toy), text: 'AI'),
             Tab(icon: Icon(Icons.info_outline), text: '关于'),
           ],
         ),
@@ -53,6 +57,7 @@ class _SettingsPageState extends State<SettingsPage>
           _HealthTab(),
           _ConnectionTab(),
           CloudBackupPage(),
+          _AiTab(),
           _AboutTab(),
         ],
       ),
@@ -314,8 +319,207 @@ class _HealthCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════
-// 关于 Tab — 版本 + GitHub 更新
+// AI 配置 Tab
 // ═══════════════════════════════════════════
+
+class _AiTab extends ConsumerStatefulWidget {
+  const _AiTab();
+
+  @override
+  ConsumerState<_AiTab> createState() => _AiTabState();
+}
+
+class _AiTabState extends ConsumerState<_AiTab> {
+  late TextEditingController _endpointCtrl;
+  late TextEditingController _keyCtrl;
+  late TextEditingController _modelCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final config = ref.read(aiConfigProvider);
+    _endpointCtrl = TextEditingController(text: config.endpoint);
+    _keyCtrl = TextEditingController(text: config.apiKey);
+    _modelCtrl = TextEditingController(text: config.model);
+  }
+
+  @override
+  void dispose() {
+    _endpointCtrl.dispose();
+    _keyCtrl.dispose();
+    _modelCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final config = ref.watch(aiConfigProvider);
+    final theme = Theme.of(context);
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // 入口模式切换
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('入口模式', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 12),
+                _EntryModeOption(
+                  icon: Icons.tab,
+                  title: '底部 Tab',
+                  desc: '在底部导航栏显示 AI 独立页面',
+                  selected: config.entryMode == AiEntryMode.tab,
+                  onTap: () => ref.read(aiConfigProvider.notifier).updateEntryMode(AiEntryMode.tab),
+                ),
+                _EntryModeOption(
+                  icon: Icons.circle,
+                  title: '悬浮球',
+                  desc: '悬浮按钮随时唤出',
+                  selected: config.entryMode == AiEntryMode.floating,
+                  onTap: () => ref.read(aiConfigProvider.notifier).updateEntryMode(AiEntryMode.floating),
+                ),
+                _EntryModeOption(
+                  icon: Icons.vertical_split,
+                  title: '侧边栏',
+                  desc: '从屏幕边缘滑出',
+                  selected: config.entryMode == AiEntryMode.sidebar,
+                  onTap: () => ref.read(aiConfigProvider.notifier).updateEntryMode(AiEntryMode.sidebar),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // API 配置
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('API 配置', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _endpointCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'API Endpoint',
+                    hintText: 'https://api.openai.com/v1',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (v) => ref.read(aiConfigProvider.notifier).updateEndpoint(v),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _keyCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'API Key',
+                    hintText: 'sk-...',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  obscureText: true,
+                  onChanged: (v) => ref.read(aiConfigProvider.notifier).updateApiKey(v),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _modelCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '模型',
+                    hintText: 'gpt-4o-mini',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (v) => ref.read(aiConfigProvider.notifier).updateModel(v),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Icon(
+                      config.isValid ? Icons.check_circle : Icons.error_outline,
+                      size: 16,
+                      color: config.isValid ? Colors.green : Colors.orange,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      config.isValid ? '配置有效，可以使用 AI 助手' : '请填写完整配置',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // 模型推荐
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('推荐模型', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text('gpt-4o-mini — 快速便宜，适合日常使用',
+                    style: theme.textTheme.bodySmall),
+                Text('gpt-4o — 更强能力，适合复杂分析',
+                    style: theme.textTheme.bodySmall),
+                Text('DeepSeek / Claude 等兼容接口也可用',
+                    style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EntryModeOption extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String desc;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _EntryModeOption({
+    required this.icon,
+    required this.title,
+    required this.desc,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      color: selected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5) : null,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: selected ? theme.colorScheme.primary : theme.dividerColor,
+        ),
+      ),
+      child: ListTile(
+        leading: Icon(icon, color: selected ? theme.colorScheme.primary : null),
+        title: Text(title, style: TextStyle(fontWeight: selected ? FontWeight.w600 : null)),
+        subtitle: Text(desc, style: theme.textTheme.bodySmall),
+        trailing: selected ? Icon(Icons.check, color: theme.colorScheme.primary) : null,
+        onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+      ),
+    );
+  }
+}
 
 class _AboutTab extends StatefulWidget {
   const _AboutTab();
@@ -553,6 +757,8 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   }
 
   Future<void> _loadUrl() async {
+    final settings = ref.read(settingsProvider);
+    if (!settings.isConnected) return;
     final url = await StorageService.instance.getServerUrl();
     if (mounted) setState(() => _apiUrl = url);
   }
@@ -582,6 +788,7 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final connected = ref.watch(settingsProvider.select((s) => s.isConnected));
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -591,54 +798,59 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                const Icon(Icons.wifi_find, size: 48, color: Colors.grey),
+                Icon(connected ? Icons.wifi_find : Icons.cloud_off, size: 48,
+                    color: connected ? Colors.grey : theme.colorScheme.outline),
                 const SizedBox(height: 12),
-                Text('API 连接检测', style: theme.textTheme.titleMedium),
+                Text(connected ? 'API 连接检测' : '未连接服务器',
+                    style: theme.textTheme.titleMedium),
                 const SizedBox(height: 8),
                 if (_apiUrl != null)
                   Text(_apiUrl!, style: theme.textTheme.bodySmall, textAlign: TextAlign.center),
-                const SizedBox(height: 24),
-
-                // 结果
-                if (_latencyMs != null) ...[
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(_apiOk == true ? Icons.check_circle : Icons.error,
-                          color: _apiOk == true ? Colors.green : Colors.red, size: 32),
-                      const SizedBox(width: 12),
-                      Text(_apiOk == true ? '连接正常' : '连接失败',
-                          style: theme.textTheme.titleMedium),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text('响应时间: $_latencyMs ms',
-                      style: theme.textTheme.bodyMedium),
-                ],
-                if (_error != null) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(8),
+                if (!connected)
+                  Text('请先添加服务器后再检测连接',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant)),
+                if (connected) ...[
+                  const SizedBox(height: 24),
+                  if (_latencyMs != null) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(_apiOk == true ? Icons.check_circle : Icons.error,
+                            color: _apiOk == true ? Colors.green : Colors.red, size: 32),
+                        const SizedBox(width: 12),
+                        Text(_apiOk == true ? '连接正常' : '连接失败',
+                            style: theme.textTheme.titleMedium),
+                      ],
                     ),
-                    child: Text(_error!, style: TextStyle(fontSize: 12, color: theme.colorScheme.onErrorContainer)),
+                    const SizedBox(height: 8),
+                    Text('响应时间: $_latencyMs ms',
+                        style: theme.textTheme.bodyMedium),
+                  ],
+                  if (_error != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(_error!, style: TextStyle(fontSize: 12, color: theme.colorScheme.onErrorContainer)),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _testing ? null : _runTest,
+                      icon: _testing
+                          ? const SizedBox(width: 18, height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.play_arrow),
+                      label: Text(_testing ? '测试中...' : '运行检测'),
+                    ),
                   ),
                 ],
-
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _testing ? null : _runTest,
-                    icon: _testing
-                        ? const SizedBox(width: 18, height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.play_arrow),
-                    label: Text(_testing ? '测试中...' : '运行检测'),
-                  ),
-                ),
               ],
             ),
           ),
