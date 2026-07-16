@@ -12,11 +12,21 @@
 //   API_KEY    — API Key for auto-login (optional, omit to use login page)
 
 import http from 'http';
+import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import { WebSocketServer } from 'ws';
 import { Client } from 'ssh2';
+
+function fetchUrl(url, res) {
+  const mod = url.startsWith('https') ? https : http;
+  mod.get(url, pr => {
+    const ct = pr.headers['content-type'] || 'application/octet-stream';
+    res.writeHead(pr.statusCode, { 'Access-Control-Allow-Origin': '*', 'Content-Type': ct });
+    pr.pipe(res);
+  }).on('error', e => { res.writeHead(502); res.end(JSON.stringify({error: e.message})); });
+}
 
 // Load .env file if exists
 const envPath = path.resolve(import.meta.dirname, '.env');
@@ -128,20 +138,15 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/script/exec') {
     handleScriptExec(req, res);
   } else if (req.url === '/api/script/index') {
-    const u = 'https://raw.githubusercontent.com/CHINAYYDSNB/Tianxuan/main/scripts/index.json';
-    http.get(u, pr => { res.writeHead(pr.statusCode, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'}); pr.pipe(res); })
-      .on('error', e => { res.writeHead(502); res.end(JSON.stringify({error:e.message})); });
+    fetchUrl('https://raw.githubusercontent.com/CHINAYYDSNB/Tianxuan/main/scripts/index.json', res);
   } else if (req.url.startsWith('/api/script/detail/')) {
     const id = req.url.split('/').pop();
-    const u = `https://raw.githubusercontent.com/CHINAYYDSNB/Tianxuan/main/scripts/details/${id}.json`;
-    http.get(u, pr => { res.writeHead(pr.statusCode, {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'}); pr.pipe(res); })
-      .on('error', e => { res.writeHead(502); res.end(JSON.stringify({error:e.message})); });
+    fetchUrl(`https://raw.githubusercontent.com/CHINAYYDSNB/Tianxuan/main/scripts/details/${id}.json`, res);
   } else if (req.url.startsWith('/api/script-download')) {
     const up = new URL(req.url, `http://${req.headers.host}`);
     const target = decodeURIComponent(up.searchParams.get('url') || '');
     if (!target) { res.writeHead(400); res.end('Missing url'); return; }
-    http.get(target, (pr) => { res.writeHead(pr.statusCode, {'Access-Control-Allow-Origin':'*'}); pr.pipe(res); })
-      .on('error', e => { res.writeHead(502); res.end(e.message); });
+    fetchUrl(target, res);
   } else if (req.url.startsWith('/api/v2/')) {
     proxyAPI(req, res);
   } else {

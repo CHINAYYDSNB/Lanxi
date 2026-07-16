@@ -1,150 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/app_store_provider.dart';
-import '../../api/app_store_api.dart';
-import '../../api/installed_app_api.dart';
 import '../../models/app_store_item.dart';
+import '../../utils/url_launcher.dart';
 
-class AppDetailPage extends ConsumerStatefulWidget {
+class AppDetailPage extends ConsumerWidget {
   final String appKey;
   final String appName;
+  final int appId;
 
   const AppDetailPage({
     super.key,
     required this.appKey,
     required this.appName,
+    required this.appId,
   });
 
   @override
-  ConsumerState<AppDetailPage> createState() => _AppDetailPageState();
-}
-
-class _AppDetailPageState extends ConsumerState<AppDetailPage> {
-  bool _installing = false;
-  String _selectedVersion = '';
-  final _composeCtrl = TextEditingController();
-  bool _loadingCompose = false;
-
-  @override
-  void dispose() {
-    _composeCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadCompose(String version) async {
-    setState(() => _loadingCompose = true);
-    final compose = await AppStoreApi.fetchCompose(widget.appKey, version);
-    if (mounted) {
-      setState(() => _loadingCompose = false);
-      if (compose != null && compose.isNotEmpty) {
-        _composeCtrl.text = compose;
-      } else if (_composeCtrl.text.isEmpty) {
-        _composeCtrl.text = '# ${widget.appName}\n'
-            'version: "3"\n'
-            'services:\n'
-            '  app:\n'
-            '    image: ${widget.appKey}:latest\n'
-            '    restart: always\n'
-            '    ports:\n'
-            '      - "8080:80"\n'
-            '    environment:\n'
-            '      - TZ=Asia/Shanghai\n';
-      }
-    }
-  }
-
-  Future<void> _startInstall(AppDetail app) async {
-    final version = _selectedVersion.isNotEmpty ? _selectedVersion : (app.versions.isNotEmpty ? app.versions.first : '');
-
-    // 先加载默认 compose
-    await _loadCompose(version);
-    if (!mounted) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          title: const Text('安装应用'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('应用: ${app.name}', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: version,
-                    decoration: const InputDecoration(labelText: '版本', border: OutlineInputBorder(), isDense: true),
-                    items: app.versions.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-                    onChanged: (v) {
-                      setDlgState(() => _selectedVersion = v ?? '');
-                      _loadCompose(v ?? '');
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Row(children: [
-                    const Text('Docker Compose 配置',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                    const Spacer(),
-                    if (_loadingCompose)
-                      const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                  ]),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _composeCtrl,
-                    decoration: const InputDecoration(
-                      hintText: '# docker-compose.yml',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    maxLines: 15,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('开始安装')),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _installing = true);
-    try {
-      Map<String, String> params = {};
-      if (_composeCtrl.text.trim().isNotEmpty) {
-        params['docker_compose'] = _composeCtrl.text.trim();
-      }
-      await InstalledAppApi.install(
-        key: app.key,
-        name: app.name,
-        version: version,
-        params: params,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${app.name} 安装成功')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('安装失败: $e'), backgroundColor: Colors.red));
-    } finally {
-      if (mounted) setState(() => _installing = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final detail = ref.watch(appDetailProvider(widget.appKey));
+  Widget build(BuildContext context, WidgetRef ref) {
+    final detail = ref.watch(appDetailProvider(appKey));
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.appName)),
+      appBar: AppBar(title: Text(appName)),
       body: detail.when(
         data: (app) => ListView(
           padding: const EdgeInsets.all(16),
@@ -179,27 +58,7 @@ class _AppDetailPageState extends ConsumerState<AppDetailPage> {
               if (app.website.isNotEmpty) _LinkRow(icon: Icons.language, label: '官网', url: app.website),
               if (app.github.isNotEmpty) _LinkRow(icon: Icons.code, label: 'GitHub', url: app.github),
               if (app.document.isNotEmpty) _LinkRow(icon: Icons.description, label: '文档', url: app.document),
-              const SizedBox(height: 16),
             ],
-            Text('可用版本', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            if (app.versions.isNotEmpty)
-              Wrap(spacing: 6, runSpacing: 6,
-                children: app.versions.take(10).map((v) => Chip(
-                  label: Text(v, style: const TextStyle(fontSize: 12)),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                )).toList(),
-              ),
-            const SizedBox(height: 24),
-            SizedBox(width: double.infinity, height: 48, child: FilledButton.icon(
-              onPressed: _installing ? null : () => _startInstall(app),
-              icon: _installing
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.download),
-              label: Text(_installing ? '安装中...' : '安装应用'),
-            )),
-            const SizedBox(height: 16),
           ],
         ),
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -208,7 +67,7 @@ class _AppDetailPageState extends ConsumerState<AppDetailPage> {
           const SizedBox(height: 16),
           Text('加载失败: $e', style: theme.textTheme.bodySmall),
           FilledButton.icon(
-            onPressed: () => ref.invalidate(appDetailProvider(widget.appKey)),
+            onPressed: () => ref.invalidate(appDetailProvider(appKey)),
             icon: const Icon(Icons.refresh), label: const Text('重试'),
           ),
         ])),

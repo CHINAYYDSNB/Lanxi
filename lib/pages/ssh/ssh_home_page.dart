@@ -3,6 +3,7 @@ import '../../services/storage_service.dart';
 import '../../services/ssh_service.dart';
 import 'ssh_terminal_page.dart';
 
+/// Standalone page (with Scaffold + AppBar)
 class SshHomePage extends StatefulWidget {
   const SshHomePage({super.key});
 
@@ -11,6 +12,24 @@ class SshHomePage extends StatefulWidget {
 }
 
 class _SshHomePageState extends State<SshHomePage> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('SSH 终端')),
+      body: const SshHomeBody(),
+    );
+  }
+}
+
+/// Embeddable body widget (no Scaffold/AppBar)
+class SshHomeBody extends StatefulWidget {
+  const SshHomeBody({super.key});
+
+  @override
+  State<SshHomeBody> createState() => _SshHomeBodyState();
+}
+
+class _SshHomeBodyState extends State<SshHomeBody> {
   List<_SavedSsh> _connections = [];
 
   @override
@@ -79,58 +98,62 @@ class _SshHomePageState extends State<SshHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('SSH 终端')),
-      body: _connections.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.terminal, size: 80,
-                      color: Theme.of(context).colorScheme.outline),
-                  const SizedBox(height: 16),
-                  Text('暂无 SSH 连接',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  Text('点击右下角 + 添加服务器',
-                      style: Theme.of(context).textTheme.bodySmall),
-                ],
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-                itemCount: _connections.length,
-                itemBuilder: (_, i) {
-                  final c = _connections[i];
-                  return Card(
-                    margin: const EdgeInsets.symmetric(
-                        horizontal: 0, vertical: 4),
-                    child: ListTile(
-                      leading: const Icon(Icons.computer, color: Colors.green),
-                      title: Text(c.name.isNotEmpty ? c.name : c.host),
-                      subtitle: Text('${c.username}@${c.host}:${c.port}'),
-                      trailing: PopupMenuButton(
-                        itemBuilder: (_) => [
-                          const PopupMenuItem(value: 'edit', child: Text('编辑')),
-                          const PopupMenuItem(value: 'del', child: Text('删除')),
-                        ],
-                        onSelected: (v) {
-                          if (v == 'edit') _edit(i);
-                          if (v == 'del') _delete(i);
-                        },
+    return Stack(
+      children: [
+        _connections.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.terminal, size: 80,
+                        color: Theme.of(context).colorScheme.outline),
+                    const SizedBox(height: 16),
+                    Text('暂无 SSH 连接',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    Text('点击右下角 + 添加服务器',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView.builder(
+                  padding: const EdgeInsets.only(top: 8, bottom: 80),
+                  itemCount: _connections.length,
+                  itemBuilder: (_, i) {
+                    final c = _connections[i];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      child: ListTile(
+                        leading: const Icon(Icons.computer, color: Colors.green),
+                        title: Text(c.name.isNotEmpty ? c.name : c.host),
+                        subtitle: Text('${c.username}@${c.host}:${c.port}'),
+                        trailing: PopupMenuButton(
+                          itemBuilder: (_) => [
+                            const PopupMenuItem(value: 'edit', child: Text('编辑')),
+                            const PopupMenuItem(value: 'del', child: Text('删除')),
+                          ],
+                          onSelected: (v) {
+                            if (v == 'edit') _edit(i);
+                            if (v == 'del') _delete(i);
+                          },
+                        ),
+                        onTap: () => _connect(i),
                       ),
-                      onTap: () => _connect(i),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _add,
-        child: const Icon(Icons.add),
-      ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton(
+            onPressed: _add,
+            child: const Icon(Icons.add),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -186,13 +209,10 @@ class _SshConnectPageState extends State<_SshConnectPage> {
     _ssh!.onData = (data) {
       final clean = data.replaceAll('\r\n', '\n').trim();
       if (clean.isEmpty) return;
-      // 只显示服务端消息，不显示终端原始输出
-      // 消息格式：[xxx] 来自 ssh_service.dart
       if (clean.startsWith('[')) {
         _addLog(clean.replaceAll('[', '').replaceAll(']', ''),
             isError: clean.contains('错误'),
             isOk: clean.contains('成功'));
-        // 连接成功 → 跳终端
         if (clean.contains('连接成功')) {
           _done = true;
           Future.delayed(const Duration(milliseconds: 500), () {

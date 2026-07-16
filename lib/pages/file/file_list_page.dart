@@ -10,6 +10,7 @@ import '../../utils/downloader.dart';
 import '../../widgets/file_icon.dart';
 import 'file_editor_page.dart';
 
+/// Standalone page (with Scaffold + AppBar)
 class FileListPage extends ConsumerStatefulWidget {
   final String? initialPath;
 
@@ -20,6 +21,28 @@ class FileListPage extends ConsumerStatefulWidget {
 }
 
 class _FileListPageState extends ConsumerState<FileListPage> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('文件管理'),
+      ),
+      body: FileListBody(initialPath: widget.initialPath),
+    );
+  }
+}
+
+/// Embeddable body widget (no Scaffold/AppBar)
+class FileListBody extends ConsumerStatefulWidget {
+  final String? initialPath;
+
+  const FileListBody({super.key, this.initialPath});
+
+  @override
+  ConsumerState<FileListBody> createState() => _FileListBodyState();
+}
+
+class _FileListBodyState extends ConsumerState<FileListBody> {
   bool _showSearch = false;
   final _searchCtrl = TextEditingController();
   bool _multiSelectMode = false;
@@ -30,7 +53,6 @@ class _FileListPageState extends ConsumerState<FileListPage> {
     super.didChangeDependencies();
     if (widget.initialPath != null && !_initialPathSet) {
       _initialPathSet = true;
-      // 延迟到下一帧确保 widget 树已挂载
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(currentPathProvider.notifier).state = widget.initialPath!;
         ref.read(fileListProvider.notifier).refresh();
@@ -51,100 +73,108 @@ class _FileListPageState extends ConsumerState<FileListPage> {
     final crumbs = ref.watch(breadcrumbProvider);
     final selected = ref.watch(fileSelectionProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        leading: IconButton(
-          icon: const Icon(Icons.home_outlined),
-          tooltip: '回到概览',
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            }
-          },
-        ),
-        title: _showSearch
-            ? TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: '搜索文件...',
-                  border: InputBorder.none,
-                ),
-                onSubmitted: (v) => ref.read(fileListProvider.notifier).setSearch(v),
-              )
-            : Text(path == '/' ? '文件管理' : path.split('/').last, overflow: TextOverflow.ellipsis),
-        actions: [
-          if (_multiSelectMode)
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () {
-                setState(() => _multiSelectMode = false);
-                ref.read(fileSelectionProvider.notifier).clear();
-              },
-            )
-          else ...[
-            IconButton(
-              icon: Icon(_showSearch ? Icons.search_off : Icons.search),
-              onPressed: () => setState(() => _showSearch = !_showSearch),
-            ),
-            PopupMenuButton<String>(
-              onSelected: (v) => _handleBulkAction(v),
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'create_dir', child: Text('新建文件夹')),
-                const PopupMenuItem(value: 'upload', child: Text('上传文件')),
-                const PopupMenuItem(value: 'go_root', child: Text('回到根目录')),
-              ],
-            ),
-          ],
-        ],
-      ),
-      body: Column(
-        children: [
-          // 面包屑
-          _BreadcrumbBar(crumbs: crumbs),
-          // 多选模式提示
-          if (_multiSelectMode)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: Theme.of(context).colorScheme.primaryContainer,
-              child: Text(
-                '已选 ${selected.length} 项',
-                style: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer),
+    return Column(
+      children: [
+        // Search/actions bar
+        Container(
+          color: Theme.of(context).colorScheme.surface,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _showSearch
+                        ? TextField(
+                            controller: _searchCtrl,
+                            autofocus: true,
+                            decoration: const InputDecoration(
+                              hintText: '搜索文件...',
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            onSubmitted: (v) => ref.read(fileListProvider.notifier).setSearch(v),
+                          )
+                        : Text(
+                            path == '/' ? '文件管理' : path.split('/').last,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                  ),
+                  if (_multiSelectMode)
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        setState(() => _multiSelectMode = false);
+                        ref.read(fileSelectionProvider.notifier).clear();
+                      },
+                    )
+                  else ...[
+                    IconButton(
+                      icon: Icon(_showSearch ? Icons.search_off : Icons.search),
+                      onPressed: () => setState(() => _showSearch = !_showSearch),
+                    ),
+                    PopupMenuButton<String>(
+                      onSelected: _handleBulkAction,
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(value: 'create_dir', child: Text('新建文件夹')),
+                        const PopupMenuItem(value: 'upload', child: Text('上传文件')),
+                        const PopupMenuItem(value: 'go_root', child: Text('回到根目录')),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
-          // 文件列表
-          Expanded(
-            child: files.when(
-              data: (result) => result.items.isEmpty
-                  ? _emptyState(context)
-                  : RefreshIndicator(
-                      onRefresh: () => ref.read(fileListProvider.notifier).refresh(),
-                      child: ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        itemCount: result.items.length,
-                        separatorBuilder: (_, _) => const Divider(height: 1, indent: 72),
-                        itemBuilder: (context, i) => _FileListTile(
-                          file: result.items[i],
-                          multiSelect: _multiSelectMode,
-                          selected: selected.contains(result.items[i].path),
-                          onTap: () => _onFileTap(result.items[i], path),
-                          onLongPress: () => _onFileLongPress(result.items[i]),
-                          onToggleSelect: () =>
-                              ref.read(fileSelectionProvider.notifier).toggle(result.items[i].path),
-                        ),
-                      ),
-                    ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => _errorState(context, e),
+          ),
+        ),
+        // 面包屑
+        _BreadcrumbBar(crumbs: crumbs),
+        // 多选模式提示
+        if (_multiSelectMode)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: Theme.of(context).colorScheme.primaryContainer,
+            child: Text(
+              '已选 ${selected.length} 项',
+              style: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer),
             ),
           ),
-        ],
-      ),
-      // 多选底部操作栏
-      bottomNavigationBar: _multiSelectMode && selected.isNotEmpty
-          ? BottomAppBar(
+        // 文件列表
+        Expanded(
+          child: files.when(
+            data: (result) => result.items.isEmpty
+                ? _emptyState(context)
+                : RefreshIndicator(
+                    onRefresh: () => ref.read(fileListProvider.notifier).refresh(),
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      itemCount: result.items.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1, indent: 72),
+                      itemBuilder: (context, i) => _FileListTile(
+                        file: result.items[i],
+                        multiSelect: _multiSelectMode,
+                        selected: selected.contains(result.items[i].path),
+                        onTap: () => _onFileTap(result.items[i], path),
+                        onLongPress: () => _onFileLongPress(result.items[i]),
+                        onToggleSelect: () =>
+                            ref.read(fileSelectionProvider.notifier).toggle(result.items[i].path),
+                      ),
+                    ),
+                  ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => _errorState(context, e),
+          ),
+        ),
+        // 多选底部操作栏
+        if (_multiSelectMode && selected.isNotEmpty)
+          Container(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: SafeArea(
+              top: false,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
@@ -152,14 +182,9 @@ class _FileListPageState extends ConsumerState<FileListPage> {
                   _actionBtn(Icons.drive_file_rename_outline, '批量', () {}),
                 ],
               ),
-            )
-          : null,
-      floatingActionButton: _multiSelectMode
-          ? null
-          : FloatingActionButton.small(
-              onPressed: () => _showCreateDialog(context),
-              child: const Icon(Icons.create_new_folder),
             ),
+          ),
+      ],
     );
   }
 
@@ -214,9 +239,9 @@ class _FileListPageState extends ConsumerState<FileListPage> {
   }
 
   bool _isTextFile(FileItem file) {
-    if (file.size > 10 * 1024 * 1024) return false; // >10MB skip
+    if (file.size > 10 * 1024 * 1024) return false;
     final ext = file.extension?.toLowerCase() ?? '';
-    final textExts = [
+    const textExts = [
       'txt', 'md', 'dart', 'js', 'ts', 'py', 'go', 'rs', 'java', 'c', 'cpp', 'h',
       'css', 'html', 'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf',
       'log', 'sh', 'bat', 'env', 'gitignore', 'dockerfile', 'makefile',
@@ -250,7 +275,6 @@ class _FileListPageState extends ConsumerState<FileListPage> {
   }
 
   Future<void> _pickAndUpload() async {
-    // file_picker 在 Web 和 Mobile 上工作
     try {
       final result = await FilePicker.platform.pickFiles();
       if (result == null || result.files.isEmpty) return;

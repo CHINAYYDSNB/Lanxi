@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/ai_config.dart';
-import '../providers/ai_provider.dart';
 import '../providers/settings_provider.dart';
 import 'ai/ai_chat_page.dart';
 import 'dashboard/dashboard_page.dart';
-import 'management/management_page.dart';
+import 'resource/resource_page.dart';
 import 'script_store/script_store_page.dart';
 import 'settings/settings_page.dart';
 
@@ -50,81 +48,50 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   int _stackIdx = 0;
-  bool _fabOpenedAi = false;
-  bool _isFloating = false;
-
-  late final List<Widget> _stablePages;
-
-  @override
-  void initState() {
-    super.initState();
-    _buildPages();
-    ref.listenManual(aiConfigProvider.select((c) => c.entryMode), (prev, next) {
-      final f = next == AiEntryMode.floating;
-      if (f != _isFloating) {
-        _isFloating = f;
-        _buildPages();
-        setState(() {});
-      }
-    });
-  }
-
-  void _buildPages() {
-    final ai = AiChatPage(onClose: _isFloating ? _closeAi : null);
-    _stablePages = [
-      _Guard(DashboardPage()),
-      const ManagementPage(),
-      ScriptStorePage(),
-      ai,
-      SettingsPage(),
-    ];
-  }
-
-  int _navToStack(int navIdx) => _isFloating && navIdx >= 3 ? navIdx + 1 : navIdx;
-  int _stackToNav(int stackIdx) {
-    if (!_isFloating) return stackIdx;
-    if (stackIdx == 3) return 0;
-    return stackIdx > 3 ? stackIdx - 1 : stackIdx;
-  }
-
-  void _onTapNav(int navIdx) {
-    setState(() { _fabOpenedAi = false; _stackIdx = _navToStack(navIdx); });
-  }
-
-  void _openAi() => setState(() { _stackIdx = 3; _fabOpenedAi = true; });
-  void _closeAi() => setState(() { _fabOpenedAi = false; _stackIdx = 0; });
+  bool _showAi = false;
 
   @override
   Widget build(BuildContext context) {
-    final showAiTab = !_isFloating;
-    final showIdx = (!showAiTab && !_fabOpenedAi && _stackIdx == 3) ? 4 : _stackIdx;
-    final navIdx = _stackToNav(showIdx);
-
     return Scaffold(
-      body: IndexedStack(index: showIdx, children: _stablePages),
-      floatingActionButton: _isFloating && showIdx < 2
-          ? FloatingActionButton(
-              onPressed: _openAi,
-              tooltip: 'AI 助手',
-              child: const Icon(Icons.auto_awesome),
-            )
-          : null,
-      bottomNavigationBar: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        child: NavigationBar(
-        indicatorColor: Colors.transparent,
-        selectedIndex: navIdx,
-        onDestinationSelected: _onTapNav,
-        destinations: [
-          const NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: '概览'),
-          const NavigationDestination(icon: Icon(Icons.dns_outlined), selectedIcon: Icon(Icons.dns), label: '管理'),
-          const NavigationDestination(icon: Icon(Icons.store_outlined), selectedIcon: Icon(Icons.store), label: '商店'),
-          if (showAiTab)
-            const NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'AI'),
-          const NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: '设置'),
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _showAi ? _stackIdx : _stackIdx,
+            children: const [
+              _Guard(DashboardPage()),      // 0 概览
+              _Guard(const ResourcePage()), // 1 资源
+              ScriptStorePage(),               // 2 脚本商店
+              SettingsPage(),               // 3 设置
+            ],
+          ),
+          if (_showAi)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Colors.white,
+                child: AiChatPage(onClose: _closeAi),
+              ),
+            ),
         ],
       ),
+      floatingActionButton: _showAi
+          ? null
+          : FloatingActionButton(
+              onPressed: () => setState(() => _showAi = true),
+              tooltip: 'AI 助手',
+              child: const Icon(Icons.auto_awesome),
+            ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _stackIdx,
+        onDestinationSelected: (i) => setState(() { _showAi = false; _stackIdx = i; }),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: '概览'),
+          NavigationDestination(icon: Icon(Icons.dashboard_customize_outlined), selectedIcon: Icon(Icons.dashboard_customize), label: '资源'),
+          NavigationDestination(icon: Icon(Icons.code_outlined), selectedIcon: Icon(Icons.code), label: '脚本商店'),
+          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: '设置'),
+        ],
       ),
     );
   }
+
+  void _closeAi() => setState(() => _showAi = false);
 }

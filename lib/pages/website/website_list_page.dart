@@ -5,61 +5,15 @@ import '../../providers/website_provider.dart';
 import 'website_create_page.dart';
 import 'website_detail_page.dart';
 
+/// Standalone page (with Scaffold + AppBar)
 class WebsiteListPage extends ConsumerWidget {
   const WebsiteListPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final websites = ref.watch(websitesProvider);
-
     return Scaffold(
       appBar: AppBar(title: const Text('网站列表')),
-      body: websites.when(
-        data: (list) => list.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.language, size: 64, color: Color(0xFFAAB4BF)),
-                    SizedBox(height: 12),
-                    Text('暂无网站', style: TextStyle(fontSize: 16, color: Color(0xFF686F78))),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: () => _goCreate(context),
-                      icon: const Icon(Icons.add),
-                      label: const Text('创建网站'),
-                    ),
-                  ],
-                ),
-              )
-            : RefreshIndicator(
-                onRefresh: () => ref.read(websitesProvider.notifier).refresh(),
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, i) => _WebsiteTile(website: list[i]),
-                ),
-              ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 12),
-              Text('加载失败', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 4),
-              Text('$e', style: Theme.of(context).textTheme.bodySmall),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () => ref.read(websitesProvider.notifier).refresh(),
-                child: const Text('重试'),
-              ),
-            ],
-          ),
-        ),
-      ),
+      body: const WebsiteListBody(),
       floatingActionButton: FloatingActionButton(
         heroTag: 'create_website',
         onPressed: () => _goCreate(context),
@@ -71,6 +25,65 @@ class WebsiteListPage extends ConsumerWidget {
   void _goCreate(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const WebsiteCreatePage()),
+    );
+  }
+}
+
+/// Embeddable body widget (no Scaffold/AppBar)
+class WebsiteListBody extends ConsumerWidget {
+  const WebsiteListBody({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final websites = ref.watch(websitesProvider);
+
+    return websites.when(
+      data: (list) => list.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.language, size: 64, color: Color(0xFFAAB4BF)),
+                  SizedBox(height: 12),
+                  Text('暂无网站', style: TextStyle(fontSize: 16, color: Color(0xFF686F78))),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const WebsiteCreatePage()),
+                    ),
+                    icon: const Icon(Icons.add),
+                    label: const Text('创建网站'),
+                  ),
+                ],
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: () => ref.read(websitesProvider.notifier).refresh(),
+              child: ListView.separated(
+                padding: const EdgeInsets.all(12),
+                itemCount: list.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, i) => _WebsiteTile(website: list[i]),
+              ),
+            ),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 12),
+            Text('加载失败', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text('$e', style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => ref.read(websitesProvider.notifier).refresh(),
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
