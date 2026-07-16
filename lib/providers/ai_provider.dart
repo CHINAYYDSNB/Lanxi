@@ -58,7 +58,6 @@ class AiConfigNotifier extends StateNotifier<AiConfig> {
   Future<void> updateEndpoint(String v) async => save(state.copyWith(endpoint: v));
   Future<void> updateApiKey(String v) async => save(state.copyWith(apiKey: v));
   Future<void> updateModel(String v) async => save(state.copyWith(model: v));
-  Future<void> updateEntryMode(AiEntryMode v) async => save(state.copyWith(entryMode: v));
 }
 
 final aiConfigProvider = StateNotifierProvider<AiConfigNotifier, AiConfig>((ref) => AiConfigNotifier());

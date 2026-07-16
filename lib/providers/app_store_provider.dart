@@ -7,7 +7,19 @@ import '../models/app_store_item.dart';
 class AppStoreNotifier extends AsyncNotifier<List<AppStoreItem>> {
   @override
   Future<List<AppStoreItem>> build() async {
-    return _search();
+    return _searchWithRetry();
+  }
+
+  Future<List<AppStoreItem>> _searchWithRetry({int maxRetries = 2}) async {
+    for (int i = 0; i < maxRetries; i++) {
+      try {
+        return await _search();
+      } catch (_) {
+        if (i >= maxRetries - 1) rethrow;
+        await Future.delayed(Duration(seconds: 1 + i));
+      }
+    }
+    return [];
   }
 
   Future<List<AppStoreItem>> _search() async {

@@ -80,7 +80,7 @@ class _AppTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.push(context, MaterialPageRoute(
-          builder: (_) => AppDetailPage(appKey: item.key, appName: item.name),
+          builder: (_) => AppDetailPage(appKey: item.key, appName: item.name, appId: item.id),
         )),
         child: Padding(
           padding: const EdgeInsets.all(12),

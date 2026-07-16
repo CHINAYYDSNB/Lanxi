@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../providers/health_provider.dart';
 import '../../providers/ai_provider.dart';
-import '../../models/ai_config.dart';
 import '../../providers/settings_provider.dart';
 import '../../api/client.dart';
 import '../../services/storage_service.dart';
@@ -359,42 +358,6 @@ class _AiTabState extends ConsumerState<_AiTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // 入口模式切换
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('入口模式', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 12),
-                _EntryModeOption(
-                  icon: Icons.tab,
-                  title: '底部 Tab',
-                  desc: '在底部导航栏显示 AI 独立页面',
-                  selected: config.entryMode == AiEntryMode.tab,
-                  onTap: () => ref.read(aiConfigProvider.notifier).updateEntryMode(AiEntryMode.tab),
-                ),
-                _EntryModeOption(
-                  icon: Icons.circle,
-                  title: '悬浮球',
-                  desc: '悬浮按钮随时唤出',
-                  selected: config.entryMode == AiEntryMode.floating,
-                  onTap: () => ref.read(aiConfigProvider.notifier).updateEntryMode(AiEntryMode.floating),
-                ),
-                _EntryModeOption(
-                  icon: Icons.vertical_split,
-                  title: '侧边栏',
-                  desc: '从屏幕边缘滑出',
-                  selected: config.entryMode == AiEntryMode.sidebar,
-                  onTap: () => ref.read(aiConfigProvider.notifier).updateEntryMode(AiEntryMode.sidebar),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-
         // API 配置
         Card(
           child: Padding(
@@ -478,45 +441,6 @@ class _AiTabState extends ConsumerState<_AiTab> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _EntryModeOption extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String desc;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _EntryModeOption({
-    required this.icon,
-    required this.title,
-    required this.desc,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      elevation: 0,
-      color: selected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5) : null,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: selected ? theme.colorScheme.primary : theme.dividerColor,
-        ),
-      ),
-      child: ListTile(
-        leading: Icon(icon, color: selected ? theme.colorScheme.primary : null),
-        title: Text(title, style: TextStyle(fontWeight: selected ? FontWeight.w600 : null)),
-        subtitle: Text(desc, style: theme.textTheme.bodySmall),
-        trailing: selected ? Icon(Icons.check, color: theme.colorScheme.primary) : null,
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-      ),
     );
   }
 }

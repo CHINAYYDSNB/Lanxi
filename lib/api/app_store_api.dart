@@ -34,8 +34,9 @@ class AppStoreApi {
     await ApiClient.instance.post('/apps/sync/remote');
   }
 
-  /// Get default compose / params for an app
-  static Future<String?> fetchCompose(String key, String version) async {
+  /// Get default compose / params for an app, also returns appDetailId
+  /// Returns (compose, appDetailId)
+  static Future<({String? compose, int? appDetailId})> fetchCompose(String key, String version) async {
     try {
       final res = await ApiClient.instance.post('/apps/install/conf', data: {
         'key': key,
@@ -43,13 +44,17 @@ class AppStoreApi {
       });
       final data = res.data['data'];
       if (data is Map) {
-        if (data['dockerCompose'] != null) return data['dockerCompose'].toString();
-        if (data['compose'] != null) return data['compose'].toString();
+        final id = data['id'];
+        final appDetailId = (id is int) ? id : (id is String ? int.tryParse(id) : null);
+        String? compose;
+        if (data['dockerCompose'] != null) compose = data['dockerCompose'].toString();
+        else if (data['compose'] != null) compose = data['compose'].toString();
+        return (compose: compose, appDetailId: appDetailId);
       }
-      if (data is String) return data;
-      return null;
+      if (data is String) return (compose: data, appDetailId: null);
+      return (compose: null, appDetailId: null);
     } catch (_) {
-      return null;
+      return (compose: null, appDetailId: null);
     }
   }
 }
