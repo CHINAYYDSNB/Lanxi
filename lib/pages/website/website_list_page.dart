@@ -12,13 +12,19 @@ class WebsiteListPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      appBar: AppBar(title: const Text('网站列表')),
-      body: const WebsiteListBody(),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'create_website',
-        onPressed: () => _goCreate(context),
-        child: const Icon(Icons.add),
+      appBar: AppBar(
+        title: const Text('网站列表'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: () => _goCreate(context),
+            ),
+          ),
+        ],
       ),
+      body: const WebsiteListBody(),
     );
   }
 

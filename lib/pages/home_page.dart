@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/settings_provider.dart';
+import '../widgets/animated_nav_bar.dart';
 import 'ai/ai_chat_page.dart';
 import 'dashboard/dashboard_page.dart';
 import 'resource/resource_page.dart';
@@ -80,14 +81,14 @@ class _HomePageState extends ConsumerState<HomePage> {
               tooltip: 'AI 助手',
               child: const Icon(Icons.auto_awesome),
             ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _stackIdx,
-        onDestinationSelected: (i) => setState(() { _showAi = false; _stackIdx = i; }),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: '概览'),
-          NavigationDestination(icon: Icon(Icons.dashboard_customize_outlined), selectedIcon: Icon(Icons.dashboard_customize), label: '资源'),
-          NavigationDestination(icon: Icon(Icons.code_outlined), selectedIcon: Icon(Icons.code), label: '脚本商店'),
-          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: '设置'),
+      bottomNavigationBar: AnimatedNavBar(
+        currentIndex: _stackIdx,
+        onTap: (i) => setState(() { _showAi = false; _stackIdx = i; }),
+        items: const [
+          AnimatedNavItem(icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard, label: '概览'),
+          AnimatedNavItem(icon: Icons.dashboard_customize_outlined, activeIcon: Icons.dashboard_customize, label: '资源'),
+          AnimatedNavItem(icon: Icons.article_outlined, activeIcon: Icons.article, label: '脚本'),
+          AnimatedNavItem(icon: Icons.settings_outlined, activeIcon: Icons.settings, label: '设置'),
         ],
       ),
     );

@@ -23,12 +23,15 @@ class OnePanelApp extends StatelessWidget {
           useMaterial3: true,
           colorScheme: ColorScheme.light(
             surface: const Color(0xFFEBEDF5), // 页面背景
-            onSurface: const Color(0xFF0C1014), // 文 字颜色
+            onSurface: const Color(0xFF0C1014), // 文字颜色
             onSurfaceVariant: const Color(0xFF686F78), // 按钮文字颜色
             outline: const Color(0xFFAAB4BF), // 按钮边框颜色
             primary: const Color(0xFF0062F5), // 主题色
           ),
           scaffoldBackgroundColor: const Color(0xFFEBEDF5), // 页面背景
+          appBarTheme: const AppBarTheme(
+            titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Color(0xFF0C1014)),
+          ),
           cardTheme: const CardThemeData(
             color: Color(0xFFFFFFFF),
             elevation: 0,

@@ -21,30 +21,118 @@ class FileListPage extends ConsumerStatefulWidget {
 }
 
 class _FileListPageState extends ConsumerState<FileListPage> {
+  bool _showSearch = false;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('文件管理'),
+        title: _showSearch
+            ? TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: '搜索文件...',
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                ),
+                onSubmitted: (v) => ref.read(fileListProvider.notifier).setSearch(v),
+              )
+            : const Text('文件管理'),
+        actions: [
+          IconButton(
+            icon: Icon(_showSearch ? Icons.search_off : Icons.search),
+            onPressed: () => setState(() => _showSearch = !_showSearch),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: PopupMenuButton<String>(
+              icon: const Icon(Icons.add),
+              onSelected: (v) {
+                if (v == 'create_dir') _showCreateDialog(context);
+                else if (v == 'upload') _pickAndUpload();
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'create_dir', child: Text('新建文件夹')),
+                const PopupMenuItem(value: 'upload', child: Text('上传文件')),
+              ],
+            ),
+          ),
+        ],
       ),
-      body: FileListBody(initialPath: widget.initialPath),
+      body: FileListBody(initialPath: widget.initialPath, showSearch: _showSearch, searchCtrl: _searchCtrl),
     );
+  }
+
+  void _showCreateDialog(BuildContext context) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新建文件夹'),
+        content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: '文件夹名', border: OutlineInputBorder()), autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(onPressed: () async {
+            final name = ctrl.text.trim();
+            if (name.isEmpty) return;
+            final parent = ref.read(currentPathProvider);
+            Navigator.pop(ctx);
+            try {
+              await ref.read(fileListProvider.notifier).createItem('$parent/$name', isDir: true);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已创建 $name')));
+              }
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e'), backgroundColor: Colors.red));
+              }
+            }
+          }, child: const Text('创建')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickAndUpload() async {
+    try {
+      final result = await FilePicker.platform.pickFiles();
+      if (result == null || !mounted) return;
+      final path = ref.read(currentPathProvider);
+      final filePath = result.files.single.path;
+      if (filePath == null) return;
+      await FileApi.upload(path, filePath);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('上传成功')));
+        ref.read(fileListProvider.notifier).refresh();
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('上传失败: $e')));
+    }
   }
 }
 
 /// Embeddable body widget (no Scaffold/AppBar)
 class FileListBody extends ConsumerStatefulWidget {
   final String? initialPath;
+  final bool showSearch;
+  final TextEditingController? searchCtrl;
 
-  const FileListBody({super.key, this.initialPath});
+  const FileListBody({super.key, this.initialPath, this.showSearch = false, this.searchCtrl});
 
   @override
   ConsumerState<FileListBody> createState() => _FileListBodyState();
 }
 
 class _FileListBodyState extends ConsumerState<FileListBody> {
-  bool _showSearch = false;
-  final _searchCtrl = TextEditingController();
   bool _multiSelectMode = false;
   bool _initialPathSet = false;
 
@@ -61,12 +149,6 @@ class _FileListBodyState extends ConsumerState<FileListBody> {
   }
 
   @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final files = ref.watch(fileListProvider);
     final path = ref.watch(currentPathProvider);
@@ -75,61 +157,6 @@ class _FileListBodyState extends ConsumerState<FileListBody> {
 
     return Column(
       children: [
-        // Search/actions bar
-        Container(
-          color: Theme.of(context).colorScheme.surface,
-          child: SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _showSearch
-                        ? TextField(
-                            controller: _searchCtrl,
-                            autofocus: true,
-                            decoration: const InputDecoration(
-                              hintText: '搜索文件...',
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(vertical: 8),
-                            ),
-                            onSubmitted: (v) => ref.read(fileListProvider.notifier).setSearch(v),
-                          )
-                        : Text(
-                            path == '/' ? '文件管理' : path.split('/').last,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                  ),
-                  if (_multiSelectMode)
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () {
-                        setState(() => _multiSelectMode = false);
-                        ref.read(fileSelectionProvider.notifier).clear();
-                      },
-                    )
-                  else ...[
-                    IconButton(
-                      icon: Icon(_showSearch ? Icons.search_off : Icons.search),
-                      onPressed: () => setState(() => _showSearch = !_showSearch),
-                    ),
-                    PopupMenuButton<String>(
-                      onSelected: _handleBulkAction,
-                      itemBuilder: (_) => [
-                        const PopupMenuItem(value: 'create_dir', child: Text('新建文件夹')),
-                        const PopupMenuItem(value: 'upload', child: Text('上传文件')),
-                        const PopupMenuItem(value: 'go_root', child: Text('回到根目录')),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
         // 面包屑
         _BreadcrumbBar(crumbs: crumbs),
         // 多选模式提示
@@ -201,20 +228,6 @@ class _FileListBodyState extends ConsumerState<FileListBody> {
     );
   }
 
-  void _handleBulkAction(String action) {
-    switch (action) {
-      case 'create_dir':
-        _showCreateDialog(context);
-        break;
-      case 'upload':
-        _pickAndUpload();
-        break;
-      case 'go_root':
-        ref.read(currentPathProvider.notifier).state = '/';
-        break;
-    }
-  }
-
   void _onFileTap(FileItem file, String currentPath) {
     if (_multiSelectMode) {
       ref.read(fileSelectionProvider.notifier).toggle(file.path);
@@ -272,79 +285,6 @@ class _FileListBodyState extends ConsumerState<FileListBody> {
         );
       }
     }
-  }
-
-  Future<void> _pickAndUpload() async {
-    try {
-      final result = await FilePicker.platform.pickFiles();
-      if (result == null || result.files.isEmpty) return;
-      final f = result.files.first;
-      final currentPath = ref.read(currentPathProvider);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('上传 ${f.name}...')),
-      );
-
-      if (f.bytes != null) {
-        await FileApi.uploadBytes(currentPath, f.name, f.bytes!);
-      } else if (f.path != null) {
-        await FileApi.upload(currentPath, f.path!);
-      }
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${f.name} 上传成功')),
-        );
-        ref.read(fileListProvider.notifier).silentRefresh();
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('上传失败: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  void _showCreateDialog(BuildContext context) {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('新建文件夹'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '文件夹名称', border: OutlineInputBorder()),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          FilledButton(
-            onPressed: () async {
-              final name = ctrl.text.trim();
-              if (name.isEmpty) return;
-              final parent = ref.read(currentPathProvider);
-              Navigator.pop(ctx);
-              try {
-                await ref.read(fileListProvider.notifier).createItem('$parent/$name', isDir: true);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('已创建 $name')),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('创建失败: $e'), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-            child: const Text('创建'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _confirmBatchDelete(Set<String> paths) async {
