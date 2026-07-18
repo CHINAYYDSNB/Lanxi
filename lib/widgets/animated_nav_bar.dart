@@ -5,11 +5,7 @@ class AnimatedNavItem {
   final IconData activeIcon;
   final String label;
 
-  const AnimatedNavItem({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-  });
+  const AnimatedNavItem({required this.icon, required this.activeIcon, required this.label});
 }
 
 class AnimatedNavBar extends StatelessWidget {
@@ -26,17 +22,82 @@ class AnimatedNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NavigationBar(
-      selectedIndex: currentIndex,
-      onDestinationSelected: onTap,
-      animationDuration: const Duration(milliseconds: 300),
-      destinations: items
-          .map((item) => NavigationDestination(
-                icon: Icon(item.icon),
-                selectedIcon: Icon(item.activeIcon),
-                label: item.label,
-              ))
-          .toList(),
+    return Container(
+      height: 58,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFFFF),
+        borderRadius: BorderRadius.circular(29),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(29),
+        child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemWidth = constraints.maxWidth / items.length;
+          final indicatorWidth = itemWidth - 8;
+          final indicatorLeft = currentIndex * itemWidth + (itemWidth - indicatorWidth) / 2;
+
+          return Stack(
+            children: [
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                left: indicatorLeft,
+                top: (58 - 50) / 2,
+                child: Container(
+                  width: indicatorWidth,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAECF0),
+                    borderRadius: BorderRadius.circular(25),
+                  ),
+                ),
+              ),
+                Row(
+                  children: List.generate(items.length, (i) {
+                    final isSelected = i == currentIndex;
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () => onTap(i),
+                        behavior: HitTestBehavior.opaque,
+                        child: SizedBox(
+                          height: 58,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              AnimatedScale(
+                                scale: isSelected ? 1.15 : 1.0,
+                                duration: const Duration(milliseconds: 200),
+                                child: Icon(
+                                  isSelected ? items[i].activeIcon : items[i].icon,
+                                  size: 22,
+                                  color: isSelected
+                                      ? const Color(0xFF0062F5)
+                                      : const Color(0xFF686F78),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                items[i].label,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                  color: isSelected
+                                      ? const Color(0xFF0062F5)
+                                      : const Color(0xFF686F78),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 }
