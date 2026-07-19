@@ -46,10 +46,11 @@ class _LogtoLoginPageState extends ConsumerState<LogtoLoginPage>
   Future<void> _checkCallbackOnResume() async {
     final initial = await LogtoBridge.getInitialLink();
     if (initial != null && mounted) {
-      await _processCallback(
+      final handled = await _processCallback(
         initial.queryParameters['code'],
         initial.queryParameters['state'],
       );
+      if (!handled && mounted) await _checkAlreadyLoggedIn();
     }
   }
 
@@ -94,7 +95,11 @@ class _LogtoLoginPageState extends ConsumerState<LogtoLoginPage>
     if (code == null || state == null) return false;
 
     final saved = await StorageService.instance.getLogtoPending();
-    if (saved == null || state != saved['state']) return false;
+    if (saved == null || state != saved['state']) {
+      // Fallback: another listener (SettingsPage) may have already
+      // processed this callback and cleared the pending state
+      return await _checkAlreadyLoggedIn();
+    }
 
     final ok = await LogtoService.exchangeCode(
       code: code,
@@ -108,6 +113,16 @@ class _LogtoLoginPageState extends ConsumerState<LogtoLoginPage>
       if (kIsWeb) LogtoBridge.clearCallbackParams();
       await StorageService.instance.clearLogtoPending();
       if (mounted) setState(() { _loggedIn = true; _checking = false; });
+      return true;
+    }
+    // exchangeCode failed — code may have been consumed by another listener
+    return await _checkAlreadyLoggedIn();
+  }
+
+  Future<bool> _checkAlreadyLoggedIn() async {
+    final loggedIn = await LogtoService.isLoggedIn;
+    if (loggedIn && mounted) {
+      setState(() { _loggedIn = true; _checking = false; });
       return true;
     }
     return false;
