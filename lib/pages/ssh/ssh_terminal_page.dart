@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/ssh_service.dart';
-import '../../stubs/xterm_stub.dart';
+import 'package:xterm/xterm.dart';
 
 class SshTerminalPage extends StatefulWidget {
   final String host;
