@@ -87,22 +87,27 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   }
 
   Future<void> _refreshLoginState() async {
-    final loggedIn = await LogtoService.isLoggedIn;
-    String name = '';
-    String avatar = '';
-    if (loggedIn) {
-      final info = await LogtoService.getUserInfo();
-      if (info != null) {
-        name = info.name;
-        avatar = info.picture;
+    try {
+      final loggedIn = await LogtoService.isLoggedIn;
+      String name = '';
+      String avatar = '';
+      if (loggedIn) {
+        final info = await LogtoService.getUserInfo();
+        if (info != null) {
+          name = info.name;
+          avatar = info.picture;
+        }
       }
+      if (mounted) setState(() {
+        _loggedIn = loggedIn;
+        _displayName = name;
+        _avatarUrl = avatar;
+        _checking = false;
+      });
+    } catch (e) {
+      debugPrint('SettingsPage._refreshLoginState error: $e');
+      if (mounted) setState(() => _checking = false);
     }
-    if (mounted) setState(() {
-      _loggedIn = loggedIn;
-      _displayName = name;
-      _avatarUrl = avatar;
-      _checking = false;
-    });
   }
 
   Future<void> _startLogin() async {

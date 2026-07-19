@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -24,7 +24,14 @@ class StorageService {
       // Base64 encode for consistency with flutter_secure_storage_web
       await p.setString(key, base64Encode(utf8.encode(value)));
     } else {
-      await _secure!.write(key: key, value: value);
+      try {
+        await _secure!.write(key: key, value: value);
+      } catch (e) {
+        debugPrint('StorageService._write error: $e');
+        // Fallback: store in SharedPreferences on secure-storage failure
+        final p = await SharedPreferences.getInstance();
+        await p.setString('ss_$key', base64Encode(utf8.encode(value)));
+      }
     }
   }
 
@@ -39,7 +46,20 @@ class StorageService {
         return raw;
       }
     } else {
-      return _secure!.read(key: key);
+      try {
+        return await _secure!.read(key: key);
+      } catch (e) {
+        debugPrint('StorageService._read error: $e');
+        // Fallback: read from SharedPreferences
+        final p = await SharedPreferences.getInstance();
+        final raw = p.getString('ss_$key');
+        if (raw == null) return null;
+        try {
+          return utf8.decode(base64Decode(raw));
+        } catch (_) {
+          return raw;
+        }
+      }
     }
   }
 
@@ -50,7 +70,14 @@ class StorageService {
       final p = await SharedPreferences.getInstance();
       await p.remove(key);
     } else {
-      await _secure!.delete(key: key);
+      try {
+        await _secure!.delete(key: key);
+      } catch (e) {
+        debugPrint('StorageService._delete error: $e');
+      }
+      // Also clean fallback
+      final p = await SharedPreferences.getInstance();
+      await p.remove('ss_$key');
     }
   }
 
