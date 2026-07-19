@@ -27,6 +27,7 @@ dependencies:
   flutter_svg: ^2.0.0
   dartssh2: ^2.9.0
   web_socket_channel: ^3.0.0
+  xterm: ^4.0.0
 
 dev_dependencies:
   flutter_test:
