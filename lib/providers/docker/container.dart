@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/context.dart';
 import '../../models/container.dart';
 import '../../services/docker/docker_client.dart';
 
@@ -10,7 +9,7 @@ final containerListProvider = AsyncNotifierProvider<ContainerNotifier, List<Cont
 
 class ContainerNotifier extends AsyncNotifier<List<ContainerInfo>> {
   Timer? _timer;
-  DockerClient get _docker => DockerClient(AppContext.i.ssh!);
+  final DockerClient _docker = DockerClient();
 
   @override
   Future<List<ContainerInfo>> build() async {
@@ -37,9 +36,9 @@ class ContainerNotifier extends AsyncNotifier<List<ContainerInfo>> {
 }
 
 final containerDetailProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, name) async {
-  return DockerClient(AppContext.i.ssh!).inspect(name);
+  return DockerClient().inspect(name);
 });
 
 final containerLogsProvider = StreamProvider.family<String, String>((ref, name) {
-  return DockerClient(AppContext.i.ssh!).logs(name, tail: 500);
+  return DockerClient().logs(name, tail: 500);
 });

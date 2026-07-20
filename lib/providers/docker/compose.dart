@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/context.dart';
 import '../../models/compose.dart';
 import '../../services/docker/docker_client.dart';
 
@@ -10,7 +9,7 @@ final composeListProvider = AsyncNotifierProvider<ComposeNotifier, List<ComposeI
 
 class ComposeNotifier extends AsyncNotifier<List<ComposeInfo>> {
   Timer? _timer;
-  DockerClient get _docker => DockerClient(AppContext.i.ssh!);
+  final DockerClient _docker = DockerClient();
 
   @override
   Future<List<ComposeInfo>> build() async {

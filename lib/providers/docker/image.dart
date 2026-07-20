@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/context.dart';
 import '../../models/image.dart';
 import '../../services/docker/docker_client.dart';
 
@@ -10,7 +9,7 @@ final imageListProvider = AsyncNotifierProvider<ImageNotifier, List<ImageInfo>>(
 
 class ImageNotifier extends AsyncNotifier<List<ImageInfo>> {
   Timer? _timer;
-  DockerClient get _docker => DockerClient(AppContext.i.ssh!);
+  final DockerClient _docker = DockerClient();
 
   @override
   Future<List<ImageInfo>> build() async {
