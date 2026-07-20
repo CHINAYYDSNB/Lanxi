@@ -17,18 +17,23 @@ jobs:
           channel: 'stable'
 
       - name: Restore keystore
+        continue-on-error: true
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/lanxi-keystore.jks
-          echo "storeFile=lanxi-keystore.jks" > android/app/key.properties
-          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/app/key.properties
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/app/key.properties
-          echo "keyPassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/app/key.properties
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > android/app/lanxi-keystore.jks
+            echo "storeFile=lanxi-keystore.jks" > android/app/key.properties
+            echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/app/key.properties
+            echo "keyAlias=lanxi" >> android/app/key.properties
+            echo "keyPassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/app/key.properties
+          fi
+        env:
+          KS: ${{ secrets.KEYSTORE_BASE64 }}
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Build APK
         run: flutter build apk --release

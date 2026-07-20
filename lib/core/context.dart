@@ -56,6 +56,11 @@ class AppContext {
 
   // ─── Firewall ───
 
+  Future<bool> hasFirewall() async {
+    final r = await _ssh!.execute('which ufw 2>/dev/null');
+    return r.isSuccess && r.stdout.contains('ufw');
+  }
+
   Future<List<String>> firewallRules() async {
     final r = await _ssh!.execute('sudo ufw status numbered 2>/dev/null');
     return r.stdout.split('\n').where((l) => l.trim().isNotEmpty).toList();
