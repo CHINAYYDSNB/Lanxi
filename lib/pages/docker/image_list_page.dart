@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/docker/image.dart';
+import 'image_pull_dialog.dart';
 
 class ImageListPage extends ConsumerWidget {
   const ImageListPage({super.key});
@@ -13,6 +14,7 @@ class ImageListPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('镜像'),
         actions: [
+          IconButton(icon: const Icon(Icons.download), onPressed: () => showImagePullDialog(context)),
           IconButton(icon: const Icon(Icons.refresh),
               onPressed: () => ref.read(imageListProvider.notifier).refresh()),
           IconButton(icon: const Icon(Icons.cleaning_services_outlined),

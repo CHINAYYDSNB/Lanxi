@@ -3,8 +3,11 @@ import 'dashboard/dashboard_page.dart';
 import 'docker/container_list_page.dart';
 import 'docker/image_list_page.dart';
 import 'docker/compose_list_page.dart';
+import 'docker/volume_list_page.dart';
+import 'docker/network_list_page.dart';
 import 'file/file_list_page.dart';
 import 'ssh/ssh_terminal_page.dart';
+import 'firewall/firewall_page.dart';
 import 'settings/settings_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -61,6 +64,14 @@ class ResourcePage extends StatelessWidget {
             title: 'Compose', subtitle: '编排/启停',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ComposeListPage())),
           ),
+          _ResourceRow(icon: Icons.storage, color: Colors.teal,
+            title: '数据卷', subtitle: 'Volume 管理',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VolumeListPage())),
+          ),
+          _ResourceRow(icon: Icons.hub, color: Colors.purple,
+            title: '网络', subtitle: 'Network 管理',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NetworkListPage())),
+          ),
           const SizedBox(height: 10),
           Text('系统工具', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFAAB4BF))),
           const SizedBox(height: 8),
@@ -71,6 +82,10 @@ class ResourcePage extends StatelessWidget {
           _ResourceRow(icon: Icons.terminal, color: Colors.green,
             title: 'SSH 终端', subtitle: '远程命令行',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SshTerminalPage())),
+          ),
+          _ResourceRow(icon: Icons.shield_outlined, color: Colors.red,
+            title: '防火墙', subtitle: 'UFW 管理',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FirewallPage())),
           ),
         ],
       ),
