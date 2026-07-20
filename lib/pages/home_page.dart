@@ -3,6 +3,8 @@ import 'dashboard/dashboard_page.dart';
 import 'docker/container_list_page.dart';
 import 'docker/image_list_page.dart';
 import 'docker/compose_list_page.dart';
+import 'file/file_list_page.dart';
+import 'ssh/ssh_terminal_page.dart';
 import 'settings/settings_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -58,6 +60,17 @@ class ResourcePage extends StatelessWidget {
           _ResourceRow(icon: Icons.dns_outlined, color: Colors.indigo,
             title: 'Compose', subtitle: '编排/启停',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ComposeListPage())),
+          ),
+          const SizedBox(height: 10),
+          Text('系统工具', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFAAB4BF))),
+          const SizedBox(height: 8),
+          _ResourceRow(icon: Icons.folder, color: Colors.amber,
+            title: '文件管理', subtitle: '浏览/编辑/删除',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FileListPage())),
+          ),
+          _ResourceRow(icon: Icons.terminal, color: Colors.green,
+            title: 'SSH 终端', subtitle: '远程命令行',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SshTerminalPage())),
           ),
         ],
       ),

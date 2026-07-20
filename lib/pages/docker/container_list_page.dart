@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/docker/container.dart';
+import 'container_detail_page.dart';
 
 class ContainerListPage extends ConsumerWidget {
   const ContainerListPage({super.key});
@@ -28,6 +29,7 @@ class ContainerListPage extends ConsumerWidget {
                   final running = c.isRunning;
                   return Card(
                     child: ListTile(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContainerDetailPage(container: c))),
                       leading: Icon(
                         running ? Icons.play_circle : Icons.stop_circle,
                         color: running ? Colors.green : Colors.red,
