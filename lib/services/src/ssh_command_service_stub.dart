@@ -2,44 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dartssh2/dartssh2.dart';
-
-class SshConfig {
-  final String host;
-  final int port;
-  final String username;
-  final String? password;
-  final String? privateKey;
-
-  const SshConfig({
-    required this.host,
-    this.port = 22,
-    required this.username,
-    this.password,
-    this.privateKey,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'host': host,
-        'port': port,
-        'username': username,
-        if (password != null) 'password': password,
-        if (privateKey != null) 'privateKey': privateKey,
-      };
-}
-
-class SshResult {
-  final int exitCode;
-  final String stdout;
-  final String stderr;
-
-  const SshResult({
-    required this.exitCode,
-    this.stdout = '',
-    this.stderr = '',
-  });
-
-  bool get isSuccess => exitCode == 0;
-}
+import '../../models/ssh_config.dart';
+import '../../models/ssh_result.dart';
 
 class SshCommandService {
   SSHClient? _client;
@@ -55,13 +19,13 @@ class SshCommandService {
       timeout: const Duration(seconds: 15),
     );
 
-    // Build SSH client
-    // Try private key auth if provided, fallback to password
     if (config.privateKey != null && config.privateKey!.isNotEmpty) {
       try {
         final keyContent = await _readKeyContent(config.privateKey!);
         if (keyContent != null) {
-          final keyPairs = SSHKeyPair.fromPem(keyContent);
+          final keyPairs = config.passphrase != null
+              ? SSHKeyPair.fromPem(keyContent, config.passphrase!)
+              : SSHKeyPair.fromPem(keyContent);
           _client = SSHClient(
             socket,
             username: config.username,
@@ -70,7 +34,7 @@ class SshCommandService {
           );
         }
       } catch (_) {
-        // Key auth setup failed, fall through to password-only
+        // Key auth failed, fall through to password
       }
     }
 
@@ -81,6 +45,17 @@ class SshCommandService {
     );
 
     _connected = true;
+  }
+
+  Future<bool> ping() async {
+    if (_client == null || !_connected) return false;
+    try {
+      final session = await _client!.execute('echo pong');
+      await session.done.timeout(const Duration(seconds: 10));
+      return session.exitCode == 0;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Read key content: try as file path first, fallback to treating input as PEM.

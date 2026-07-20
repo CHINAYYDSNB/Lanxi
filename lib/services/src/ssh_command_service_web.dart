@@ -1,44 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
-
-class SshConfig {
-  final String host;
-  final int port;
-  final String username;
-  final String? password;
-  final String? privateKey;
-
-  const SshConfig({
-    required this.host,
-    this.port = 22,
-    required this.username,
-    this.password,
-    this.privateKey,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'host': host,
-        'port': port,
-        'username': username,
-        if (password != null) 'password': password,
-        if (privateKey != null) 'privateKey': privateKey,
-      };
-}
-
-class SshResult {
-  final int exitCode;
-  final String stdout;
-  final String stderr;
-
-  const SshResult({
-    required this.exitCode,
-    this.stdout = '',
-    this.stderr = '',
-  });
-
-  bool get isSuccess => exitCode == 0;
-}
+import '../../models/ssh_config.dart';
+import '../../models/ssh_result.dart';
 
 class SshCommandService {
   WebSocketChannel? _channel;
@@ -53,7 +17,7 @@ class SshCommandService {
 
   Future<void> connect(SshConfig config) async {
     disconnect();
-    _proxyUrl = 'ws://localhost:25569/ssh-proxy';
+    _proxyUrl = 'ws://localhost:25568/ssh-proxy';
 
     _channel = WebSocketChannel.connect(Uri.parse(_proxyUrl!));
     await _channel!.ready;
@@ -182,6 +146,16 @@ class SshCommandService {
     }));
 
     return controller.stream;
+  }
+
+  Future<bool> ping() async {
+    if (!_connected || _channel == null) return false;
+    try {
+      _channel!.sink.add(jsonEncode({'type': 'ping'}));
+      return true; // best-effort; server should respond with pong
+    } catch (_) {
+      return false;
+    }
   }
 
   void disconnect() {

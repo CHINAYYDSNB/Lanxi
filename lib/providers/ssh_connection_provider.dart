@@ -1,9 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/ssh_command_service.dart';
 import '../services/storage_service.dart';
+import '../models/ssh_config.dart';
 
 /// Manages SSH connection lifecycle.
-/// Auto-connects from saved credentials, falls back to detecting host from 1Panel.
+/// Auto-connects from saved credentials.
 class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>> {
   SshCommandService? _service;
 
@@ -13,15 +14,9 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
 
   SshCommandService? get service => _service;
 
-  /// Extract host from 1Panel URL (e.g., http://114.66.58.232:25567 → 114.66.58.232)
+  /// Extract host from saved server config
   static Future<String?> detectServerHost() async {
-    final url = await StorageService.instance.getServerUrl();
-    if (url == null || url.isEmpty) return null;
-    try {
-      return Uri.parse(url).host;
-    } catch (_) {
-      return null;
-    }
+    return StorageService.instance.getServerHost();
   }
 
   Future<void> _autoConnect() async {

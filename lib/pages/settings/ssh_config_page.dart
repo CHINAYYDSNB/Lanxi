@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/ssh_connection_provider.dart';
-import '../../services/ssh_command_service.dart';
 import '../../services/storage_service.dart';
+import '../../models/ssh_config.dart';
 
 class SshConfigPage extends ConsumerStatefulWidget {
   const SshConfigPage({super.key});

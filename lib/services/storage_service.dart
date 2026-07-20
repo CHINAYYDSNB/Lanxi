@@ -89,7 +89,30 @@ class StorageService {
 
   Future<void> deleteApiKey() => _delete('api_key');
 
-  // ─── Server URL (non-sensitive) ───
+  // ─── Server Address ───
+
+  Future<void> saveServerHost(String host) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString('server_host', host);
+  }
+
+  Future<String?> getServerHost() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getString('server_host');
+  }
+
+  Future<void> saveServerPort(int port) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setInt('server_port', port);
+  }
+
+  Future<int?> getServerPort() async {
+    final p = await SharedPreferences.getInstance();
+    final v = p.getInt('server_port');
+    return v;
+  }
+
+  // ─── Server URL (deprecated, kept for migration) ───
 
   Future<void> saveServerUrl(String url) async {
     final p = await SharedPreferences.getInstance();
