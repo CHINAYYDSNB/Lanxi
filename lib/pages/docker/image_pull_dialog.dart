@@ -13,7 +13,7 @@ Future<void> showImagePullDialog(BuildContext context) {
         final _lines = <String>[];
         bool _pulling = false;
         bool _done = false;
-        String? _error;
+        String? pullError;
 
         void _pull() {
           final image = ctrl.text.trim();
@@ -21,7 +21,7 @@ Future<void> showImagePullDialog(BuildContext context) {
           setState(() { _pulling = true; _lines.clear(); });
           _sub = AppContext.i.stream('docker pull $image').listen(
             (d) => setState(() => _lines.add(d)),
-            onError: (e) => setState(() { _error = e.toString(); _pulling = false; }),
+            onError: (e) => setState(() { pullError = e.toString(); _pulling = false; }),
             onDone: () => setState(() { _done = true; _pulling = false; }),
           );
         }
@@ -38,12 +38,12 @@ Future<void> showImagePullDialog(BuildContext context) {
                 decoration: const InputDecoration(hintText: 'nginx:latest or repo/image:tag', border: OutlineInputBorder()),
                 onSubmitted: (_) => _pull(),
               ),
-              if (_pulling || _done || _error != null)
+              if (_pulling || _done || pullError != null)
                 Container(
                   height: 200, padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(6)),
-                  child: _error != null
-                      ? Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12, fontFamily: 'monospace'))
+                  child: pullError != null
+                      ? Text(pullError!, style: const TextStyle(color: Colors.red, fontSize: 12, fontFamily: 'monospace'))
                       : ListView(children: _lines.map((l) => Text(l, style: const TextStyle(color: Colors.greenAccent, fontSize: 11, fontFamily: 'monospace', height: 1.3))).toList()),
                 ),
             ]),

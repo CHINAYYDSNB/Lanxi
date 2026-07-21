@@ -50,7 +50,7 @@ class _SshConfigPageState extends ConsumerState<SshConfigPage> {
       if (host != null && host.isNotEmpty) _hostCtrl.text = host;
     }
     // Check current connection status
-    final svc = ref.read(sshServiceProvider);
+    ref.read(sshServiceProvider); // trigger rebuild to check current state
     if (mounted) setState(() {});
   }
 
