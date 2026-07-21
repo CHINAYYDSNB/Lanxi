@@ -13,8 +13,13 @@ class ComposeInfo {
     configFiles: json['ConfigFiles']?.toString() ?? '',
   );
 
-  static List<ComposeInfo> fromJsonl(String jsonl) {
-    return jsonl.split('\n').where((l) => l.trim().isNotEmpty).map((l) {
+  static List<ComposeInfo> fromJsonl(String raw) {
+    // Try JSON array first (Docker Compose v2+), fallback to JSONL
+    try {
+      final list = jsonDecode(raw) as List;
+      return list.map((e) => ComposeInfo.fromJson(e as Map<String, dynamic>)).toList();
+    } catch (_) {}
+    return raw.split('\n').where((l) => l.trim().isNotEmpty).map((l) {
       try { return ComposeInfo.fromJson(jsonDecode(l)); } catch (_) { return null; }
     }).whereType<ComposeInfo>().toList();
   }

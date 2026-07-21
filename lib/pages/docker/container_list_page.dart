@@ -63,6 +63,8 @@ class ContainerListPage extends ConsumerWidget {
     } else {
       err = await n.operate(name, op);
     }
+    await Future.delayed(const Duration(milliseconds: 800));
+    n.refresh();
     if (err.isNotEmpty && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
     }

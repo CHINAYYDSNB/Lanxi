@@ -41,9 +41,9 @@ class _FileListPageState extends State<FileListPage> {
       final line = l.trim();
       if (line.isEmpty || line.startsWith('total ')) continue;
       final p = line.split(RegExp(r'\s+'));
-      if (p.length < 9) continue;
+      if (p.length < 8) continue;
       final perms = p[0];
-      final name = p.sublist(8).join(' ');
+      final name = p.sublist(7).join(' ');
       if (name == '.' || name == '..') continue;
       items.add(_FileEntry(
         name: name,

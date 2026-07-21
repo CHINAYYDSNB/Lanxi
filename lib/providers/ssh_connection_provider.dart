@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/ssh_command_service.dart';
 import '../services/storage_service.dart';
@@ -8,12 +9,30 @@ import '../core/context.dart';
 /// Auto-connects from saved credentials.
 class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>> {
   SshCommandService? _service;
+  Timer? _keepalive;
 
   SshConnectionNotifier() : super(const AsyncValue.data(null)) {
     _autoConnect();
+    _startKeepalive();
   }
 
   SshCommandService? get service => _service;
+
+  void _startKeepalive() {
+    _keepalive?.cancel();
+    _keepalive = Timer.periodic(const Duration(seconds: 60), (_) async {
+      if (_service?.isConnected == true) {
+        final ok = await _service!.ping();
+        if (!ok) {
+          _service?.disconnect();
+          _service = null;
+          AppContext.i.ssh = null;
+          state = const AsyncValue.data(null);
+          _autoConnect(); // try reconnect
+        }
+      }
+    });
+  }
 
   /// Extract host from saved server config
   static Future<String?> detectServerHost() async {
@@ -68,6 +87,7 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
 
   @override
   void dispose() {
+    _keepalive?.cancel();
     _service?.disconnect();
     super.dispose();
   }
