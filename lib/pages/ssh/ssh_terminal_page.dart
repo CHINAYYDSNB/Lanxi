@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
@@ -14,7 +15,7 @@ class SshTerminalPage extends StatefulWidget {
 
 class _SshTerminalPageState extends State<SshTerminalPage> {
   final _terminal = Terminal(maxLines: 5000);
-  late TerminalController _ctrl;
+  final _ctrl = TerminalController();
   SSHClient? _client;
   SSHSession? _session;
   bool _connected = false;
@@ -23,9 +24,8 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
   @override
   void initState() {
     super.initState();
-    _ctrl = TerminalController(_terminal);
     _terminal.onOutput = (data) {
-      _session?.write(data);
+      _session?.write(Uint8List.fromList(utf8.encode(data)));
     };
     _terminal.onResize = (w, h, pw, ph) {
       _session?.resizeTerminal(w, h, pw, ph);
@@ -80,8 +80,8 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
       );
       _session = shell;
 
-      shell.stdout.listen((d) => _terminal.write(d));
-      shell.stderr.listen((d) => _terminal.write(d));
+      shell.stdout.listen((d) => _terminal.write(utf8.decode(d)));
+      shell.stderr.listen((d) => _terminal.write(utf8.decode(d)));
       shell.done.then((_) {
         if (mounted) setState(() { _connected = false; _status = '会话已关闭'; });
       });
