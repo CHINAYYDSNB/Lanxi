@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'providers/settings_provider.dart';
 import 'services/storage_service.dart';
+import 'pages/home_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +45,9 @@ class LanxiApp extends StatelessWidget {
         focusColor: Colors.transparent,
       ),
       home: const InitPage(),
+      routes: {
+        '/home': (context) => const HomePage(),
+      },
     );
   }
 }
@@ -68,6 +72,10 @@ class _InitPageState extends ConsumerState<InitPage> {
     } catch (e) {
       debugPrint('InitPage error: $e');
     }
+    _goHome();
+  }
+
+  void _goHome() {
     if (mounted) Navigator.pushReplacementNamed(context, '/home');
   }
 
