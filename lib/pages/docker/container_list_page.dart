@@ -4,11 +4,37 @@ import '../../providers/docker/container.dart';
 import '../../widgets/docker_check.dart';
 import 'container_detail_page.dart';
 
-class ContainerListPage extends ConsumerWidget {
+class ContainerListPage extends ConsumerStatefulWidget {
   const ContainerListPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ContainerListPage> createState() => _ContainerListPageState();
+}
+
+class _ContainerListPageState extends ConsumerState<ContainerListPage> {
+  final _operating = <String>{};
+
+  Future<void> _handleOp(String name, String op) async {
+    final n = ref.read(containerListProvider.notifier);
+    final label = {'start':'启动','stop':'停止','restart':'重启','remove':'删除'}[op] ?? op;
+    setState(() => _operating.add(name));
+    final err = op == 'remove' ? await n.remove(name) : await n.operate(name, op);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(err.isEmpty ? '$name $label成功' : err),
+        backgroundColor: err.isEmpty ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 2),
+      ));
+    }
+    if (err.isEmpty) {
+      await Future.delayed(const Duration(seconds: 1));
+      n.refresh();
+    }
+    if (mounted) setState(() => _operating.remove(name));
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final list = ref.watch(containerListProvider);
 
     return Scaffold(
@@ -28,18 +54,18 @@ class ContainerListPage extends ConsumerWidget {
                 itemBuilder: (_, i) {
                   final c = items[i];
                   final running = c.isRunning;
+                  final loading = _operating.contains(c.name);
                   return Card(
                     child: ListTile(
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContainerDetailPage(container: c))),
-                      leading: Icon(
-                        running ? Icons.play_circle : Icons.stop_circle,
-                        color: running ? Colors.green : Colors.red,
-                        size: 32,
-                      ),
+                      leading: loading
+                          ? const SizedBox(width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 2))
+                          : Icon(running ? Icons.play_circle : Icons.stop_circle,
+                              color: running ? Colors.green : Colors.red, size: 32),
                       title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                       subtitle: Text(c.image, style: const TextStyle(fontSize: 12, color: Color(0xFF686F78))),
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (op) => _handleOp(context, ref, c.name, op),
+                      trailing: loading ? null : PopupMenuButton<String>(
+                        onSelected: (op) => _handleOp(c.name, op),
                         itemBuilder: (_) => [
                           if (running) const PopupMenuItem(value: 'stop', child: Text('停止')),
                           if (!running) const PopupMenuItem(value: 'start', child: Text('启动')),
@@ -54,22 +80,5 @@ class ContainerListPage extends ConsumerWidget {
         error: (e, _) => Center(child: Text('$e', style: const TextStyle(color: Colors.red))),
       ),
     ));
-  }
-
-  void _handleOp(BuildContext context, WidgetRef ref, String name, String op) async {
-    final n = ref.read(containerListProvider.notifier);
-    final label = op == 'remove' ? '删除' : {'start':'启动','stop':'停止','restart':'重启'}[op] ?? op;
-    final err = op == 'remove' ? await n.remove(name) : await n.operate(name, op);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(err.isEmpty ? '$name ${label}成功' : err),
-        backgroundColor: err.isEmpty ? Colors.green : Colors.red,
-        duration: const Duration(seconds: 2),
-      ));
-    }
-    if (err.isEmpty) {
-      await Future.delayed(const Duration(seconds: 1));
-      n.refresh();
-    }
   }
 }

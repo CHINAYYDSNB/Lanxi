@@ -19,6 +19,7 @@ class _SshConfigPageState extends ConsumerState<SshConfigPage> {
   final _keyCtrl = TextEditingController();
   bool _usePassword = true;
   bool _loading = false;
+  bool _verifying = false;
   String? _error;
   final _log = <String>[];
 
@@ -84,6 +85,7 @@ class _SshConfigPageState extends ConsumerState<SshConfigPage> {
       return;
     }
     _addLog('SSH 连接建立，验证中...');
+    if (mounted) setState(() => _verifying = true);
 
     // Verify connection with test command
     final svc = ref.read(sshServiceProvider);
@@ -93,13 +95,14 @@ class _SshConfigPageState extends ConsumerState<SshConfigPage> {
         _addLog('验证成功: ${r.stdout.trim().replaceAll('\n', ', ')}');
       } else {
         _addLog('验证失败: ${r.stderr}');
-        if (mounted) setState(() { _loading = false; _error = '连接验证失败'; });
+        if (mounted) setState(() { _loading = false; _verifying = false; _error = '连接验证失败'; });
+        ref.read(sshConnectionProvider.notifier).disconnect();
         return;
       }
     }
 
     _addLog('已连接');
-    if (mounted) setState(() => _loading = false);
+    if (mounted) setState(() { _loading = false; _verifying = false; });
   }
 
   void _disconnect() {
@@ -118,25 +121,36 @@ class _SshConfigPageState extends ConsumerState<SshConfigPage> {
   @override
   Widget build(BuildContext context) {
     final conn = ref.watch(sshConnectionProvider);
-    final isConnected = conn.valueOrNull != null;
     final theme = Theme.of(context);
+    String status;
+    IconData statusIcon;
+    Color statusColor;
+    if (_loading) {
+      status = '连接中...'; statusIcon = Icons.sync; statusColor = Colors.orange;
+    } else if (_verifying) {
+      status = '验证中...'; statusIcon = Icons.sync; statusColor = Colors.orange;
+    } else if (conn.valueOrNull != null) {
+      status = '已连接'; statusIcon = Icons.check_circle; statusColor = Colors.green;
+    } else if (_error != null) {
+      status = '连接失败'; statusIcon = Icons.error; statusColor = Colors.red;
+    } else {
+      status = '未配置'; statusIcon = Icons.link_off; statusColor = const Color(0xFF686F78);
+    }
+    final isConnected = conn.valueOrNull != null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('SSH 连接')),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        // Status card
         Card(
-          color: isConnected ? Colors.green.withAlpha(15) : (_error != null ? Colors.red.withAlpha(15) : Colors.grey.withAlpha(15)),
+          color: statusColor.withAlpha(15),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(children: [
-              Icon(isConnected ? Icons.check_circle : (_error != null ? Icons.error : Icons.link_off),
-                  color: isConnected ? Colors.green : (_error != null ? Colors.red : const Color(0xFF686F78)), size: 24),
+              _loading || _verifying
+                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Icon(statusIcon, color: statusColor, size: 24),
               const SizedBox(width: 10),
-              Expanded(child: Text(
-                isConnected ? '已连接' : (_error != null ? '连接失败' : '未配置'),
-                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-              )),
+              Expanded(child: Text(status, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600))),
               if (isConnected)
                 TextButton(onPressed: _disconnect, child: const Text('断开', style: TextStyle(color: Colors.red))),
             ]),

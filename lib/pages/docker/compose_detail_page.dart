@@ -26,9 +26,13 @@ class _ComposeDetailPageState extends State<ComposeDetailPage> {
 
     setState(() => _loading = true);
     try {
-      final r = await AppContext.i.exec('cd "$dir" && docker compose -f "$file" ps --format json 2>/dev/null || echo "[]"');
-      final list = jsonDecode(r.stdout) as List;
-      if (mounted) setState(() { _containers = list.cast<Map<String, dynamic>>(); _loading = false; });
+      final r = await AppContext.i.exec('cd "$dir" && docker compose -f "$file" ps --format json 2>/dev/null || echo ""');
+      final lines = r.stdout.split('\n').where((l) => l.trim().isNotEmpty).toList();
+      final list = <Map<String, dynamic>>[];
+      for (final l in lines) {
+        try { list.add(jsonDecode(l) as Map<String, dynamic>); } catch (_) {}
+      }
+      if (mounted) setState(() { _containers = list; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }

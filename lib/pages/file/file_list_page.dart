@@ -54,6 +54,10 @@ class _FileListPageState extends State<FileListPage> {
         perms: perms.substring(1),
       ));
     }
+    items.sort((a, b) {
+      if (a.isDir != b.isDir) return a.isDir ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
     return items;
   }
 
