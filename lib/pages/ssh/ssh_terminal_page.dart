@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 import 'package:dartssh2/dartssh2.dart';
@@ -24,6 +24,12 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
   void initState() {
     super.initState();
     _ctrl = TerminalController(_terminal);
+    _terminal.onOutput = (data) {
+      _session?.write(data);
+    };
+    _terminal.onResize = (w, h, pw, ph) {
+      _session?.resizeTerminal(w, h, pw, ph);
+    };
     _connect();
   }
 
@@ -80,22 +86,9 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
         if (mounted) setState(() { _connected = false; _status = '会话已关闭'; });
       });
 
-      setState(() { _connected = true; _status = '已连接'; });
-      _terminal.write('\x1b[32m=== Lanxi Terminal ===\x1b[0m\r\n');
-      _terminal.write('Connected to ${config.host} as ${config.username}\r\n');
+      if (mounted) setState(() { _connected = true; _status = '已连接'; });
     } catch (e) {
       if (mounted) setState(() => _status = '连接失败: $e');
-    }
-  }
-
-  void _onKey(KeyEvent event) {
-    if (event is KeyKeyboardEvent && event.alt) {
-      // Alt+key combinations
-      final char = event.character;
-      if (char != null) {
-        _session?.write([0x1b, char.codeUnitAt(0)]);
-        return;
-      }
     }
   }
 
@@ -127,52 +120,23 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
             icon: const Icon(Icons.refresh),
             onPressed: () { _session?.close(); _client?.close(); _connect(); },
           ),
+          if (_connected) PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'clear') _terminal.buffer.clear();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'clear', child: Text('清屏')),
+            ],
+          ),
         ],
       ),
       body: _connected
-          ? Column(children: [
-              Expanded(
-                child: TerminalView(
-                  _terminal,
-                  controller: _ctrl,
-                  autofocus: true,
-                  onSecondaryTapDown: (d) => _showMenu(d.globalPosition),
-                  keyboardInput: (data) {
-                    if (data == '\r') {
-                      _session?.write([13]);
-                    } else if (data.codeUnitAt(0) == 127) {
-                      _session?.write([127]);
-                    } else if (data.codeUnitAt(0) == 9) {
-                      _session?.write([9]); // tab
-                    } else if (data == '\x03') {
-                      _session?.write([3]); // Ctrl+C
-                    } else if (data == '\x04') {
-                      _session?.write([4]); // Ctrl+D
-                    } else {
-                      _session?.write(data.codeUnits);
-                    }
-                  },
-                ),
-              ),
-            ])
+          ? TerminalView(_terminal, controller: _ctrl, autofocus: true)
           : Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
               const SizedBox(width: 48, height: 48, child: CircularProgressIndicator()),
               const SizedBox(height: 16),
               Text(_status, style: const TextStyle(color: Color(0xFF686F78))),
             ])),
     );
-  }
-
-  void _showMenu(Offset pos) {
-    showMenu(context: context, position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy), items: [
-      const PopupMenuItem(value: 'paste', child: Text('粘贴')),
-      const PopupMenuItem(value: 'clear', child: Text('清屏')),
-    ]).then((v) {
-      if (v == 'clear') _terminal.clear();
-      if (v == 'paste') {
-        // Clipboard paste via Ctrl+Shift+V or terminal's built-in
-        _terminal.paste('\x1b[200~'); // bracketed paste start
-      }
-    });
   }
 }
