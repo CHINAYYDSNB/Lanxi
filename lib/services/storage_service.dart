@@ -1,84 +1,32 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Unified storage backend.
-/// - Mobile: flutter_secure_storage (Android Keystore / iOS Keychain) for secrets
-/// - Web: SharedPreferences (flutter_secure_storage_web may not be registered)
+/// Unified storage — SharedPreferences only.
 class StorageService {
   StorageService._();
 
   static final _instance = StorageService._();
   static StorageService get instance => _instance;
 
-  // On web, use SharedPreferences directly since flutter_secure_storage_web
-  // may not be auto-registered. On mobile, use FlutterSecureStorage for key material.
-  static bool get _useSharedPrefs => kIsWeb;
-
-  final _secure = _useSharedPrefs ? null : const FlutterSecureStorage();
-
   Future<void> _write(String key, String value) async {
-    if (_useSharedPrefs) {
-      final p = await SharedPreferences.getInstance();
-      // Base64 encode for consistency with flutter_secure_storage_web
-      await p.setString(key, base64Encode(utf8.encode(value)));
-    } else {
-      try {
-        await _secure!.write(key: key, value: value);
-      } catch (e) {
-        debugPrint('StorageService._write error: $e');
-        // Fallback: store in SharedPreferences on secure-storage failure
-        final p = await SharedPreferences.getInstance();
-        await p.setString('ss_$key', base64Encode(utf8.encode(value)));
-      }
-    }
+    final p = await SharedPreferences.getInstance();
+    await p.setString(key, base64Encode(utf8.encode(value)));
   }
 
   Future<String?> _read(String key) async {
-    if (_useSharedPrefs) {
-      final p = await SharedPreferences.getInstance();
-      final raw = p.getString(key);
-      if (raw == null) return null;
-      try {
-        return utf8.decode(base64Decode(raw));
-      } catch (_) {
-        return raw;
-      }
-    } else {
-      try {
-        return await _secure!.read(key: key);
-      } catch (e) {
-        debugPrint('StorageService._read error: $e');
-        // Fallback: read from SharedPreferences
-        final p = await SharedPreferences.getInstance();
-        final raw = p.getString('ss_$key');
-        if (raw == null) return null;
-        try {
-          return utf8.decode(base64Decode(raw));
-        } catch (_) {
-          return raw;
-        }
-      }
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString(key);
+    if (raw == null) return null;
+    try {
+      return utf8.decode(base64Decode(raw));
+    } catch (_) {
+      return raw;
     }
   }
 
-  bool get isWeb => _useSharedPrefs;
-
   Future<void> _delete(String key) async {
-    if (_useSharedPrefs) {
-      final p = await SharedPreferences.getInstance();
-      await p.remove(key);
-    } else {
-      try {
-        await _secure!.delete(key: key);
-      } catch (e) {
-        debugPrint('StorageService._delete error: $e');
-      }
-      // Also clean fallback
-      final p = await SharedPreferences.getInstance();
-      await p.remove('ss_$key');
-    }
+    final p = await SharedPreferences.getInstance();
+    await p.remove(key);
   }
 
   // ─── API Key (sensitive, encrypted) ───
@@ -155,46 +103,11 @@ class StorageService {
   Future<void> deleteServerKey(String serverId) =>
       _delete('srv_key_$serverId');
 
-  // ─── First-launch migration (SharedPreferences → secure storage) ───
+  // ─── Init ───
 
-  Future<void> migrateIfNeeded() async {
-    final p = await SharedPreferences.getInstance();
-    final migrated = p.getBool('_migrated_v1');
-    if (migrated == true) return;
+  Future<void> migrateIfNeeded() async {} // no-op: all SharedPreferences now
 
-    // migrate api_key
-    final oldKey = p.getString('api_key');
-    if (oldKey != null && oldKey.isNotEmpty) {
-      await saveApiKey(oldKey);
-      await p.remove('api_key');
-    }
-
-    // migrate saved server apiKeys
-    final serversRaw = p.getString('saved_servers');
-    if (serversRaw != null) {
-      try {
-        final list = (jsonDecode(serversRaw) as List).cast<Map<String, dynamic>>();
-        for (final s in list) {
-          final key = s['apiKey'] as String?;
-          final id = s['id'] as String?;
-          if (key != null && id != null && key.isNotEmpty) {
-            await saveServerKey(id, key);
-          }
-        }
-        // Strip apiKey from saved_servers JSON
-        final cleaned = list.map((s) {
-          final m = Map<String, dynamic>.from(s);
-          m.remove('apiKey');
-          return m;
-        }).toList();
-        await saveServersJson(jsonEncode(cleaned));
-      } catch (_) {}
-    }
-
-    await p.setBool('_migrated_v1', true);
-  }
-
-  // ─── Logto OIDC Pending (PKCE verifier + state 暂存) ───
+  // ─── Deprecated: Logto storage (kept for compatibility) ───
 
   Future<void> saveLogtoPending(String verifier, String state) async {
     await _write('logto_pending', jsonEncode({'verifier': verifier, 'state': state}));
