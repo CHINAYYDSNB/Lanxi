@@ -3,11 +3,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/docker/image.dart';
 import 'image_pull_dialog.dart';
 
-class ImageListPage extends ConsumerWidget {
+class ImageListPage extends ConsumerStatefulWidget {
   const ImageListPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ImageListPage> createState() => _ImageListPageState();
+}
+
+class _ImageListPageState extends ConsumerState<ImageListPage> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => ref.read(imageListProvider.notifier).refresh());
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final list = ref.watch(imageListProvider);
 
     return Scaffold(
@@ -18,7 +29,7 @@ class ImageListPage extends ConsumerWidget {
           IconButton(icon: const Icon(Icons.refresh),
               onPressed: () => ref.read(imageListProvider.notifier).refresh()),
           IconButton(icon: const Icon(Icons.cleaning_services_outlined),
-              onPressed: () => _prune(context, ref)),
+              onPressed: _prune),
         ],
       ),
       body: list.when(
@@ -37,7 +48,7 @@ class ImageListPage extends ConsumerWidget {
                       subtitle: Text(img.size, style: const TextStyle(fontSize: 12, color: Color(0xFF686F78))),
                       trailing: IconButton(
                         icon: const Icon(Icons.delete_outline, color: Colors.red),
-                        onPressed: () => _remove(context, ref, img.id),
+                        onPressed: () => _remove(img.id),
                       ),
                     ),
                   );
@@ -48,14 +59,14 @@ class ImageListPage extends ConsumerWidget {
     );
   }
 
-  void _remove(BuildContext context, WidgetRef ref, String id) async {
+  void _remove(String id) async {
     final err = await ref.read(imageListProvider.notifier).remove(id);
     if (err.isNotEmpty && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
     }
   }
 
-  void _prune(BuildContext context, WidgetRef ref) async {
+  void _prune() async {
     final out = await ref.read(imageListProvider.notifier).prune();
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(out.isNotEmpty ? out : '清理完成')));

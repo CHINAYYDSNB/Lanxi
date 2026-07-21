@@ -14,6 +14,12 @@ class ContainerListPage extends ConsumerStatefulWidget {
 class _ContainerListPageState extends ConsumerState<ContainerListPage> {
   final _operating = <String>{};
 
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => ref.read(containerListProvider.notifier).refresh());
+  }
+
   Future<void> _handleOp(String name, String op) async {
     final n = ref.read(containerListProvider.notifier);
     final label = {'start':'启动','stop':'停止','restart':'重启','remove':'删除'}[op] ?? op;
