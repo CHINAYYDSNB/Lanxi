@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/ssh_command_service.dart';
 import '../services/storage_service.dart';
 import '../models/ssh_config.dart';
+import '../core/context.dart';
 
 /// Manages SSH connection lifecycle.
 /// Auto-connects from saved credentials.
@@ -46,6 +47,7 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
       _service = SshCommandService();
       await _service!.connect(config);
       state = AsyncValue.data(_service);
+      AppContext.i.ssh = _service; // sync with AppContext
       // Save credentials
       await StorageService.instance.saveSshConnections([config.toJson()]);
       return null;
@@ -60,6 +62,7 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
       _service?.disconnect();
     } catch (_) {}
     _service = null;
+    AppContext.i.ssh = null;
     state = const AsyncValue.data(null);
   }
 

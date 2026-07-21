@@ -10,6 +10,7 @@ class AppContext {
   SshCommandService? _ssh;
 
   SshCommandService? get ssh => _ssh;
+  set ssh(SshCommandService? s) => _ssh = s;
   bool get isConnected => _ssh?.isConnected ?? false;
 
   SshCommandService get _s {
