@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/docker/container.dart';
+import '../../widgets/docker_check.dart';
 import 'container_detail_page.dart';
 
 class ContainerListPage extends ConsumerWidget {
@@ -18,7 +19,7 @@ class ContainerListPage extends ConsumerWidget {
               onPressed: () => ref.read(containerListProvider.notifier).refresh()),
         ],
       ),
-      body: list.when(
+      body: DockerCheck(child: list.when(
         data: (items) => items.isEmpty
             ? const Center(child: Text('无容器', style: TextStyle(color: Color(0xFF686F78))))
             : ListView.builder(
@@ -52,21 +53,23 @@ class ContainerListPage extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e', style: const TextStyle(color: Colors.red))),
       ),
-    );
+    ));
   }
 
   void _handleOp(BuildContext context, WidgetRef ref, String name, String op) async {
     final n = ref.read(containerListProvider.notifier);
-    String? err;
-    if (op == 'remove') {
-      err = await n.remove(name);
-    } else {
-      err = await n.operate(name, op);
+    final label = op == 'remove' ? '删除' : {'start':'启动','stop':'停止','restart':'重启'}[op] ?? op;
+    final err = op == 'remove' ? await n.remove(name) : await n.operate(name, op);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(err.isEmpty ? '$name ${label}成功' : err),
+        backgroundColor: err.isEmpty ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 2),
+      ));
     }
-    await Future.delayed(const Duration(milliseconds: 800));
-    n.refresh();
-    if (err.isNotEmpty && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    if (err.isEmpty) {
+      await Future.delayed(const Duration(seconds: 1));
+      n.refresh();
     }
   }
 }

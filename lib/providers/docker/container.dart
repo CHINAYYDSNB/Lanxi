@@ -23,15 +23,11 @@ class ContainerNotifier extends AsyncNotifier<List<ContainerInfo>> {
   }
 
   Future<String> operate(String name, String op) async {
-    final err = await _docker.operate(name, op);
-    if (err.isEmpty) await refresh();
-    return err;
+    return _docker.operate(name, op);
   }
 
   Future<String> remove(String name) async {
-    final err = await _docker.remove(name);
-    if (err.isEmpty) await refresh();
-    return err;
+    return _docker.remove(name);
   }
 }
 

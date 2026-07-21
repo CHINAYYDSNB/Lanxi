@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/docker/compose.dart';
+import 'compose_detail_page.dart';
 
 class ComposeListPage extends ConsumerWidget {
   const ComposeListPage({super.key});
@@ -28,6 +29,7 @@ class ComposeListPage extends ConsumerWidget {
                   final running = c.status.toLowerCase().contains('running');
                   return Card(
                     child: ListTile(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ComposeDetailPage(compose: c))),
                       leading: Icon(
                         running ? Icons.dns : Icons.dns_outlined,
                         color: running ? Colors.green : const Color(0xFF686F78),

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/settings_provider.dart';
+import '../../providers/ssh_connection_provider.dart';
 import '../../services/update_service.dart';
 import 'ssh_config_page.dart';
 
@@ -9,7 +9,8 @@ class SettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final connected = ref.watch(settingsProvider.select((s) => s.isConnected));
+    final conn = ref.watch(sshConnectionProvider);
+    final connected = conn.valueOrNull != null;
     final theme = Theme.of(context);
 
     return Scaffold(
