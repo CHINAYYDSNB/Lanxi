@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -13,24 +14,84 @@ class SshTerminalPage extends StatefulWidget {
   State<SshTerminalPage> createState() => _SshTerminalPageState();
 }
 
-class _SshTerminalPageState extends State<SshTerminalPage> {
+class _SshTerminalPageState extends State<SshTerminalPage>
+    with WidgetsBindingObserver {
   final _terminal = Terminal(maxLines: 5000);
   final _ctrl = TerminalController();
   SSHClient? _client;
   SSHSession? _session;
   bool _connected = false;
   String _status = '连接中...';
+  Timer? _keepalive;
+  int _termWidth = 80;
+  int _termHeight = 24;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _terminal.onOutput = (data) {
       _session?.write(Uint8List.fromList(utf8.encode(data)));
     };
     _terminal.onResize = (w, h, pw, ph) {
+      _termWidth = w;
+      _termHeight = h;
       _session?.resizeTerminal(w, h, pw, ph);
     };
     _connect();
+  }
+
+  // --- App lifecycle ---
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_connected) {
+      _reconnect();
+    }
+  }
+
+  // --- Keepalive ---
+
+  void _startKeepalive() {
+    _keepalive?.cancel();
+    _keepalive = Timer.periodic(const Duration(seconds: 30), (_) async {
+      if (!_connected || _client == null) return;
+      try {
+        final session = await _client!.execute('echo pong');
+        await session.done.timeout(const Duration(seconds: 10));
+        if (session.exitCode != 0) {
+          _onDisconnected();
+        }
+      } catch (_) {
+        _onDisconnected();
+      }
+    });
+  }
+
+  void _onDisconnected() {
+    if (!mounted) return;
+    _session?.close();
+    _session = null;
+    setState(() {
+      _connected = false;
+      _status = '会话已断开，重连中...';
+    });
+    _reconnect();
+  }
+
+  // --- Connect / Reconnect ---
+
+  Future<void> _reconnect() async {
+    _keepalive?.cancel();
+    try {
+      _session?.close();
+    } catch (_) {}
+    try {
+      _client?.close();
+    } catch (_) {}
+    _client = null;
+    _session = null;
+    await _connect();
   }
 
   Future<void> _connect() async {
@@ -74,8 +135,8 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
       final shell = await client.shell(
         pty: SSHPtyConfig(
           type: 'xterm-256color',
-          width: _terminal.viewWidth,
-          height: _terminal.viewHeight,
+          width: _termWidth,
+          height: _termHeight,
         ),
       );
       _session = shell;
@@ -83,10 +144,20 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
       shell.stdout.listen((d) => _terminal.write(utf8.decode(d)));
       shell.stderr.listen((d) => _terminal.write(utf8.decode(d)));
       shell.done.then((_) {
-        if (mounted) setState(() { _connected = false; _status = '会话已关闭'; });
+        if (mounted) {
+          _connected = false;
+          _status = '会话已关闭';
+          setState(() {});
+        }
       });
 
-      if (mounted) setState(() { _connected = true; _status = '已连接'; });
+      // Restore terminal size after reconnect
+      shell.resizeTerminal(_termWidth, _termHeight, 0, 0);
+
+      _connected = true;
+      _status = '已连接';
+      if (mounted) setState(() {});
+      _startKeepalive();
     } catch (e) {
       if (mounted) setState(() => _status = '连接失败: $e');
     }
@@ -94,6 +165,8 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _keepalive?.cancel();
     _session?.close();
     _client?.close();
     _ctrl.dispose();
@@ -118,7 +191,7 @@ class _SshTerminalPageState extends State<SshTerminalPage> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () { _session?.close(); _client?.close(); _connect(); },
+            onPressed: _reconnect,
           ),
           if (_connected) PopupMenuButton<String>(
             onSelected: (v) {
