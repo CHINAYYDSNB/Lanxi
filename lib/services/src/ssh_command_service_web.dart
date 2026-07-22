@@ -8,6 +8,7 @@ class SshCommandService {
   WebSocketChannel? _channel;
   bool _connected = false;
   String? _proxyUrl;
+  Timer? _keepalive;
   // Pending exec callbacks
   final _pending = <String, Completer<SshResult>>{};
   final _streamCtrl = <String, StreamController<String>>{};
@@ -37,7 +38,11 @@ class SshCommandService {
           switch (msg['type']) {
             case 'ready':
               _connected = true;
+              _startKeepalive();
               completer.complete();
+              break;
+            case 'pong':
+              // keepalive response, nothing to do
               break;
             case 'exec-result':
               final id = msg['id'] as String?;
@@ -101,6 +106,19 @@ class SshCommandService {
     );
   }
 
+  void _startKeepalive() {
+    _keepalive?.cancel();
+    _keepalive = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!_connected || _channel == null) return;
+      try {
+        _channel!.sink.add(jsonEncode({'type': 'ping'}));
+      } catch (_) {
+        _connected = false;
+        _keepalive?.cancel();
+      }
+    });
+  }
+
   Future<SshResult> execute(
     String command, {
     Duration? timeout,
@@ -159,6 +177,8 @@ class SshCommandService {
   }
 
   void disconnect() {
+    _keepalive?.cancel();
+    _keepalive = null;
     _connected = false;
     for (final c in _pending.values) {
       c.complete(const SshResult(exitCode: -1, stderr: 'Disconnected'));

@@ -18,6 +18,7 @@ class _ContainerDetailPageState extends ConsumerState<ContainerDetailPage> {
   Map<String, dynamic>? _inspect;
   Map<String, dynamic>? _stats;
   Timer? _timer;
+  bool _operating = false;
 
   @override
   void initState() {
@@ -49,17 +50,37 @@ class _ContainerDetailPageState extends ConsumerState<ContainerDetailPage> {
   Widget build(BuildContext context) {
     final c = widget.container;
     final theme = Theme.of(context);
-
     final cfg = (_inspect?['Config'] as Map<String, dynamic>?);
+
+    // Watch container list for reactive state (F3 + F5)
+    final containerListAsync = ref.watch(containerListProvider);
+    final isRunning = containerListAsync.maybeWhen(
+      data: (containers) =>
+          containers.firstWhere((ct) => ct.name == c.name, orElse: () => c).isRunning,
+      orElse: () => c.isRunning,
+    );
+    Widget? composeWarning;
+    final containers = containerListAsync.asData?.value;
+    if (containers != null) {
+      composeWarning = _buildComposeWarning(containers);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(c.name),
         actions: [
-          if (c.isRunning)
-            IconButton(icon: const Icon(Icons.stop), tooltip: '停止', onPressed: () => _op('stop')),
-          if (!c.isRunning)
-            IconButton(icon: const Icon(Icons.play_arrow), tooltip: '启动', onPressed: () => _op('start')),
-          IconButton(icon: const Icon(Icons.restart_alt), tooltip: '重启', onPressed: () => _op('restart')),
+          if (_operating)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else ...[
+            if (isRunning)
+              IconButton(icon: const Icon(Icons.stop), tooltip: '停止', onPressed: () => _op('stop')),
+            if (!isRunning)
+              IconButton(icon: const Icon(Icons.play_arrow), tooltip: '启动', onPressed: () => _op('start')),
+            IconButton(icon: const Icon(Icons.restart_alt), tooltip: '重启', onPressed: () => _op('restart')),
+          ],
         ],
       ),
       body: ListView(
@@ -70,7 +91,7 @@ class _ContainerDetailPageState extends ConsumerState<ContainerDetailPage> {
               padding: const EdgeInsets.all(16),
               child: Column(children: [
                 Row(children: [
-                  Icon(c.isRunning ? Icons.check_circle : Icons.cancel, color: c.isRunning ? Colors.green : Colors.red, size: 20),
+                  Icon(isRunning ? Icons.check_circle : Icons.cancel, color: isRunning ? Colors.green : Colors.red, size: 20),
                   const SizedBox(width: 8),
                   Text(c.state, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                 ]),
@@ -123,6 +144,11 @@ class _ContainerDetailPageState extends ConsumerState<ContainerDetailPage> {
               ]),
             ),
           ),
+          // Compose multi-container warning (F3)
+          if (composeWarning != null) ...[
+            const SizedBox(height: 10),
+            composeWarning,
+          ],
           const SizedBox(height: 90),
         ],
       ),
@@ -143,13 +169,58 @@ class _ContainerDetailPageState extends ConsumerState<ContainerDetailPage> {
   );
 
   Future<void> _op(String op) async {
-    final err = await AppContext.i.dockerExec('$op ${widget.container.name}').then((r) => r.isSuccess ? '' : r.stderr);
-    if (err.isNotEmpty && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
-    } else {
+    final label = {'start': '启动', 'stop': '停止', 'restart': '重启'}[op] ?? op;
+    setState(() => _operating = true);
+    final err = await AppContext.i.dockerExec('$op ${widget.container.name}')
+        .then((r) => r.isSuccess ? '' : r.stderr);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(err.isEmpty ? '${widget.container.name} $label成功' : err),
+        backgroundColor: err.isEmpty ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 2),
+      ));
+    }
+    if (err.isEmpty) {
+      await Future.delayed(const Duration(seconds: 1));
       ref.read(containerListProvider.notifier).refresh();
       _load();
     }
+    if (mounted) setState(() => _operating = false);
+  }
+
+  String? _getComposeProject() {
+    final fromPs = widget.container.labels['com.docker.compose.project'];
+    if (fromPs != null && fromPs.isNotEmpty) return fromPs;
+    final labels = _inspect?['Config']?['Labels'] as Map<String, dynamic>?;
+    return labels?['com.docker.compose.project']?.toString();
+  }
+
+  Widget? _buildComposeWarning(List<ContainerInfo> containers) {
+    final project = _getComposeProject();
+    if (project == null || project.isEmpty) return null;
+    final count = containers
+        .where((ct) => ct.labels['com.docker.compose.project'] == project)
+        .length;
+    if (count <= 1) return null;
+    return Card(
+      color: Colors.blue.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '此容器属于 Compose 项目 $project，对该容器的操作（启动/停止/重启/删除）会影响同一 Compose 中的其他容器。',
+                style: TextStyle(color: Colors.blue.shade900, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
