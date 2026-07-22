@@ -51,15 +51,9 @@ class SshCommandService {
 
   void _startKeepalive() {
     _keepalive?.cancel();
-    _keepalive = Timer.periodic(const Duration(seconds: 30), (_) async {
+    _keepalive = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!_connected || _client == null) return;
-      final ok = await ping();
-      if (!ok) {
-        _connected = false;
-        _client?.close();
-        _client = null;
-        _keepalive?.cancel();
-      }
+      ping(); // fire-and-forget: keep NAT/firewall alive, don't disconnect on failure
     });
   }
 
