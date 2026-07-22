@@ -8,6 +8,7 @@ import '../../models/ssh_result.dart';
 class SshCommandService {
   SSHClient? _client;
   bool _connected = false;
+  Timer? _keepalive;
 
   bool get isConnected => _connected;
 
@@ -45,6 +46,21 @@ class SshCommandService {
     );
 
     _connected = true;
+    _startKeepalive();
+  }
+
+  void _startKeepalive() {
+    _keepalive?.cancel();
+    _keepalive = Timer.periodic(const Duration(seconds: 30), (_) async {
+      if (!_connected || _client == null) return;
+      final ok = await ping();
+      if (!ok) {
+        _connected = false;
+        _client?.close();
+        _client = null;
+        _keepalive?.cancel();
+      }
+    });
   }
 
   Future<bool> ping() async {
@@ -127,6 +143,8 @@ class SshCommandService {
   }
 
   void disconnect() {
+    _keepalive?.cancel();
+    _keepalive = null;
     _client?.close();
     _client = null;
     _connected = false;

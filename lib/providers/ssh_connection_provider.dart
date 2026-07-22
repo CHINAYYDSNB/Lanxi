@@ -20,7 +20,7 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
 
   void _startKeepalive() {
     _keepalive?.cancel();
-    _keepalive = Timer.periodic(const Duration(seconds: 60), (_) async {
+    _keepalive = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (_service?.isConnected == true) {
         final ok = await _service!.ping();
         if (!ok) {
@@ -54,7 +54,12 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
           password: first['password']?.toString(),
           privateKey: first['privateKey']?.toString(),
         );
-        await connect(config);
+        // Retry up to 3 times with backoff
+        for (int i = 0; i < 3; i++) {
+          final err = await connect(config);
+          if (err == null) return; // success
+          if (i < 2) await Future.delayed(Duration(seconds: (i + 1) * 3));
+        }
       }
     }
   }

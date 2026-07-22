@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/context.dart';
 
-Future<void> showImagePullDialog(BuildContext context) {
+Future<void> showImagePullDialog(BuildContext context, {VoidCallback? onPulled}) {
   final ctrl = TextEditingController();
   return showDialog(
     context: context,
@@ -22,7 +22,10 @@ Future<void> showImagePullDialog(BuildContext context) {
           _sub = AppContext.i.stream('docker pull $image').listen(
             (d) => setState(() => _lines.add(d)),
             onError: (e) => setState(() { pullError = e.toString(); _pulling = false; }),
-            onDone: () => setState(() { _done = true; _pulling = false; }),
+            onDone: () {
+                setState(() { _done = true; _pulling = false; });
+                onPulled?.call();
+              },
           );
         }
 

@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../core/context.dart';
 import '../../models/compose.dart';
+import '../../models/container.dart';
+import 'container_detail_page.dart';
 
 class ComposeDetailPage extends StatefulWidget {
   final ComposeInfo compose;
@@ -62,6 +64,15 @@ class _ComposeDetailPageState extends State<ComposeDetailPage> {
                       color: ctr['State']?.toString() == 'running' ? Colors.green : Colors.red, size: 28),
                   title: Text(ctr['Name']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                   subtitle: Text(ctr['Image']?.toString() ?? '', style: const TextStyle(fontSize: 12, color: Color(0xFF686F78))),
+                  onTap: () {
+                    final mapped = Map<String, dynamic>.from(ctr);
+                    mapped['Id'] = mapped.remove('ID');
+                    mapped['Names'] = mapped.remove('Name');
+                    final info = ContainerInfo.fromJson(mapped);
+                    Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => ContainerDetailPage(container: info)),
+                    );
+                  },
                 ),
               )),
               if (_containers.isEmpty && !_loading)

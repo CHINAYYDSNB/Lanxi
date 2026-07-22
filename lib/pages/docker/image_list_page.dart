@@ -25,7 +25,9 @@ class _ImageListPageState extends ConsumerState<ImageListPage> {
       appBar: AppBar(
         title: const Text('镜像'),
         actions: [
-          IconButton(icon: const Icon(Icons.download), onPressed: () => showImagePullDialog(context)),
+          IconButton(icon: const Icon(Icons.download), onPressed: () => showImagePullDialog(context,
+                onPulled: () => ref.read(imageListProvider.notifier).refresh(),
+              )),
           IconButton(icon: const Icon(Icons.refresh),
               onPressed: () => ref.read(imageListProvider.notifier).refresh()),
           IconButton(icon: const Icon(Icons.cleaning_services_outlined),
