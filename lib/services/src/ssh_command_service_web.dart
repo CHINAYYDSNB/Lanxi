@@ -113,8 +113,7 @@ class SshCommandService {
       try {
         _channel!.sink.add(jsonEncode({'type': 'ping'}));
       } catch (_) {
-        _connected = false;
-        _keepalive?.cancel();
+        // fire-and-forget: keep NAT/firewall alive, don't disconnect on failure
       }
     });
   }

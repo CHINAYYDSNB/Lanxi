@@ -10,6 +10,7 @@ import '../core/context.dart';
 class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>> {
   SshCommandService? _service;
   Timer? _keepalive;
+  bool _manualDisconnect = false;
 
   SshConnectionNotifier() : super(const AsyncValue.data(null)) {
     _autoConnect();
@@ -21,6 +22,7 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
   void _startKeepalive() {
     _keepalive?.cancel();
     _keepalive = Timer.periodic(const Duration(seconds: 30), (_) async {
+      if (_manualDisconnect) return;
       if (_service?.isConnected == true) {
         final ok = await _service!.ping();
         if (!ok) {
@@ -28,8 +30,11 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
           _service = null;
           AppContext.i.ssh = null;
           state = const AsyncValue.data(null);
-          _autoConnect(); // try reconnect
+          _autoConnect();
         }
+      } else {
+        // Not connected — try reconnect (initial startup or transport layer detected drop)
+        _autoConnect();
       }
     });
   }
@@ -65,6 +70,7 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
   }
 
   Future<String?> connect(SshConfig config) async {
+    _manualDisconnect = false;
     state = const AsyncValue.loading();
     try {
       _service?.disconnect();
@@ -82,6 +88,7 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
   }
 
   void disconnect() {
+    _manualDisconnect = true;
     try {
       _service?.disconnect();
     } catch (_) {}
