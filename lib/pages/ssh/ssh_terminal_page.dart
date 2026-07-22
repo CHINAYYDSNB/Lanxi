@@ -45,8 +45,9 @@ class _SshTerminalPageState extends State<SshTerminalPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && !_connected) {
-      _reconnect();
+    if (state == AppLifecycleState.resumed && _client != null) {
+      // TCP socket likely dead after background — force reconnect
+      _onDisconnected();
     }
   }
 

@@ -35,19 +35,14 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
 
   Future<void> _onAppResumed() async {
     if (_manualDisconnect) return;
-    // Check if connection is still alive
-    if (_service?.isConnected == true) {
-      final ok = await _service!.ping();
-      if (ok) return; // connection healthy
-      // ping failed — connection is dead
-      try {
-        _service?.disconnect();
-      } catch (_) {}
-      _service = null;
-      AppContext.i.ssh = null;
-      state = const AsyncValue.data(null);
-    }
-    // Reconnect
+    // TCP socket is almost certainly dead after background — force reconnect.
+    // Skip ping to avoid hanging on dead socket.
+    try {
+      _service?.disconnect();
+    } catch (_) {}
+    _service = null;
+    AppContext.i.ssh = null;
+    state = const AsyncValue.data(null);
     _autoConnect();
   }
 

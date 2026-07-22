@@ -51,8 +51,9 @@ class SshCommandService {
   Future<bool> ping() async {
     if (_client == null || !_connected) return false;
     try {
-      final session = await _client!.execute('echo pong');
-      await session.done.timeout(const Duration(seconds: 10));
+      final session = await _client!.execute('echo pong')
+          .timeout(const Duration(seconds: 5));
+      await session.done.timeout(const Duration(seconds: 5));
       return session.exitCode == 0;
     } catch (_) {
       return false;
