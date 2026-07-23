@@ -22,13 +22,14 @@ class _CronPageState extends State<CronPage> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final r = await AppContext.i.exec('crontab -l 2>&1');
+      final r = await AppContext.i.exec('crontab -l');
       if (r.exitCode == 0) {
         _entries = CronEntry.parseMulti(r.stdout);
-      } else if (r.stderr.contains('no crontab')) {
+      } else if (r.stdout.contains('no crontab') || r.stderr.contains('no crontab')) {
         _entries = [];
       } else {
-        _error = r.stderr;
+        _error = r.stderr.isNotEmpty ? r.stderr : r.stdout;
+        if (_error!.isEmpty || _error == 'null') _error = null;
       }
     } catch (e) {
       _error = e.toString();

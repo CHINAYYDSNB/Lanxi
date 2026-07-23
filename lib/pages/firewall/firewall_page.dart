@@ -47,10 +47,10 @@ class _FirewallPageState extends State<FirewallPage> {
   Future<FirewallType?> _detect() async {
     // Priority: ufw > firewalld > iptables
     final r = await _ctx.exec(
-      'which ufw 2>/dev/null && echo "ufw" || '
-      'which firewall-cmd 2>/dev/null && echo "firewalld" || '
-      'which iptables 2>/dev/null && echo "iptables" || '
-      'echo "none"',
+      'if which ufw >/dev/null 2>&1; then echo "ufw"; '
+      'elif which firewall-cmd >/dev/null 2>&1; then echo "firewalld"; '
+      'elif which iptables >/dev/null 2>&1; then echo "iptables"; '
+      'else echo "none"; fi',
     );
     final out = r.stdout.trim();
     return switch (out) {

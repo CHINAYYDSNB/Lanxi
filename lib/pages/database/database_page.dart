@@ -9,7 +9,7 @@ class DatabasePage extends StatefulWidget {
 }
 
 class _DatabasePageState extends State<DatabasePage> {
-  List<DbInstance> _instances = [];
+  Map<DbType, List<DbInstance>> _grouped = {};
   bool _loading = true;
   String? _error;
 
@@ -22,7 +22,12 @@ class _DatabasePageState extends State<DatabasePage> {
   Future<void> _scan() async {
     setState(() { _loading = true; _error = null; });
     try {
-      _instances = await DatabaseService.detectAll();
+      final all = await DatabaseService.detectAll();
+      final grouped = <DbType, List<DbInstance>>{};
+      for (final inst in all) {
+        grouped.putIfAbsent(inst.type, () => []).add(inst);
+      }
+      _grouped = grouped;
     } catch (e) {
       _error = e.toString();
     }
@@ -32,6 +37,7 @@ class _DatabasePageState extends State<DatabasePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final order = [DbType.mysql, DbType.postgresql, DbType.mongodb, DbType.redis];
 
     return Scaffold(
       appBar: AppBar(
@@ -44,61 +50,85 @@ class _DatabasePageState extends State<DatabasePage> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
                   const SizedBox(height: 12),
                   Text(_error!, style: const TextStyle(color: Color(0xFF686F78))),
                   const SizedBox(height: 16),
                   FilledButton(onPressed: _scan, child: const Text('重试')),
                 ]))
-              : _instances.isEmpty
+              : _grouped.isEmpty
                   ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.storage_outlined, size: 64, color: theme.colorScheme.outline),
                       const SizedBox(height: 16),
                       const Text('未检测到数据库实例', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
-                      const Text('支持识别 MySQL / PostgreSQL / MongoDB / Redis\n包括 Docker 容器内的实例',
-                          textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF686F78))),
+                      const Text('支持 MySQL / PostgreSQL / MongoDB / Redis\n宿主机与 Docker 容器', textAlign: TextAlign.center,
+                          style: TextStyle(color: Color(0xFF686F78))),
                       const SizedBox(height: 16),
-                      FilledButton.icon(
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('重新检测'),
-                        onPressed: _scan,
-                      ),
+                      FilledButton.icon(icon: const Icon(Icons.refresh, size: 18), label: const Text('重新检测'), onPressed: _scan),
                     ]))
-                  : ListView.builder(
+                  : ListView(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
-                      itemCount: _instances.length,
-                      itemBuilder: (_, i) => _instanceCard(_instances[i], theme),
+                      children: order.where((t) => _grouped.containsKey(t)).expand<Widget>((type) {
+                        final list = _grouped[type]!;
+                        return [
+                          _typeHeader(type, list.length),
+                          ...list.map((inst) => _instanceCard(inst, type)),
+                          const SizedBox(height: 8),
+                        ];
+                      }).toList(),
                     ),
     );
   }
 
-  Widget _instanceCard(DbInstance inst, ThemeData theme) {
-    final icon = switch (inst.type) {
-      DbType.mysql => Icons.storage,
-      DbType.postgresql => Icons.storage,
-      DbType.mongodb => Icons.storage,
-      DbType.redis => Icons.memory,
+  Widget _typeHeader(DbType type, int count) {
+    final (icon, color) = switch (type) {
+      DbType.mysql => (Icons.storage, Colors.blue),
+      DbType.postgresql => (Icons.storage, Colors.indigo),
+      DbType.mongodb => (Icons.storage, Colors.green),
+      DbType.redis => (Icons.memory, Colors.red),
     };
-    final color = switch (inst.type) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, top: 8, bottom: 4),
+      child: Row(children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        Text(type.label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          decoration: BoxDecoration(color: color.withAlpha(20), borderRadius: BorderRadius.circular(8)),
+          child: Text('$count', style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
+  }
+
+  Widget _instanceCard(DbInstance inst, DbType type) {
+    final color = switch (type) {
       DbType.mysql => Colors.blue,
       DbType.postgresql => Colors.indigo,
       DbType.mongodb => Colors.green,
       DbType.redis => Colors.red,
     };
+    final icon = type == DbType.redis ? Icons.memory : Icons.storage;
 
     return Card(
       child: ListTile(
         leading: CircleAvatar(backgroundColor: color.withAlpha(30), child: Icon(icon, color: color)),
-        title: Text(inst.type.label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-        subtitle: Text([
-          if (inst.version != null) 'v${inst.version}',
-          if (inst.inDocker) 'Docker',
-          if (inst.containerName != null) inst.containerName!,
-          if (inst.status != null) inst.status!,
-        ].join(' · '), style: const TextStyle(fontSize: 12, color: Color(0xFF686F78))),
-        trailing: const Icon(Icons.chevron_right, color: Color(0xFFAAB4BF)),
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _InstanceDetailPage(instance: inst))),
+        title: Text(inst.label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        subtitle: Text(inst.subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF686F78))),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (inst.authFailed)
+            const Icon(Icons.lock, color: Colors.red, size: 18)
+          else if (inst.authUser != null)
+            const Icon(Icons.lock_open, color: Colors.green, size: 18),
+          const SizedBox(width: 4),
+          const Icon(Icons.chevron_right, color: Color(0xFFAAB4BF)),
+        ]),
+        onTap: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => _InstanceDetailPage(instance: inst, onAuthChanged: () => setState(() {})),
+        )),
       ),
     );
   }
@@ -108,7 +138,8 @@ class _DatabasePageState extends State<DatabasePage> {
 
 class _InstanceDetailPage extends StatefulWidget {
   final DbInstance instance;
-  const _InstanceDetailPage({required this.instance});
+  final VoidCallback onAuthChanged;
+  const _InstanceDetailPage({required this.instance, required this.onAuthChanged});
 
   @override
   State<_InstanceDetailPage> createState() => _InstanceDetailPageState();
@@ -120,28 +151,135 @@ class _InstanceDetailPageState extends State<_InstanceDetailPage> with SingleTic
   List<DbUser> _users = [];
   String? _connInfo;
   bool _loading = true;
+  bool _authPrompted = false;
+
+  DbInstance get inst => widget.instance;
 
   @override
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 3, vsync: this);
-    _load();
+    _initAuth();
+  }
+
+  Future<void> _initAuth() async {
+    if (inst.authUser != null && inst.authPass != null) {
+      _load();
+      return;
+    }
+    // Try auto-detect from Docker env
+    if (inst.inDocker) {
+      final creds = await DatabaseService.tryDetectCredentials(inst);
+      if (creds != null) {
+        inst.authUser = creds.user;
+        inst.authPass = creds.pass;
+        inst.authFailed = false;
+        widget.onAuthChanged();
+        _load();
+        return;
+      }
+    }
+    // Prompt for credentials
+    if (mounted && !_authPrompted) {
+      _authPrompted = true;
+      _showAuthDialog();
+    }
+  }
+
+  Future<void> _showAuthDialog() async {
+    final userCtrl = TextEditingController(text: inst.type.defaultUser);
+    final passCtrl = TextEditingController();
+    final result = await showDialog<({String user, String pass})>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text('${inst.type.label} 认证'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          if (inst.inDocker) ...[
+            Container(
+              padding: const EdgeInsets.all(8),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(color: Colors.amber.withAlpha(20), borderRadius: BorderRadius.circular(6)),
+              child: Row(children: [
+                const Icon(Icons.info_outline, size: 16, color: Colors.amber),
+                const SizedBox(width: 8),
+                Expanded(child: Text('容器: ${inst.containerName}', style: const TextStyle(fontSize: 12))),
+              ]),
+            ),
+          ],
+          TextField(
+            controller: userCtrl,
+            decoration: InputDecoration(labelText: '用户名', hintText: inst.type.defaultUser, border: const OutlineInputBorder()),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: passCtrl,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: '密码', border: OutlineInputBorder()),
+            onSubmitted: (_) => Navigator.pop(ctx, (user: userCtrl.text.trim(), pass: passCtrl.text)),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('跳过')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, (user: userCtrl.text.trim(), pass: passCtrl.text)),
+            child: const Text('连接'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      inst.authUser = result.user;
+      inst.authPass = result.pass;
+
+      // Test credentials
+      if (mounted) setState(() => _loading = true);
+      final err = await DatabaseService.testCredentials(inst);
+      if (err != null) {
+        inst.authFailed = true;
+        widget.onAuthChanged();
+        if (mounted) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('认证失败: $err')));
+          // Re-prompt
+          _showAuthDialog();
+          return;
+        }
+      }
+      inst.authFailed = false;
+      widget.onAuthChanged();
+      _load();
+    } else {
+      // Skipped — show connection info tab only
+      inst.authFailed = true;
+      widget.onAuthChanged();
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _load() async {
+    if (inst.authUser == null || inst.authFailed) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     setState(() => _loading = true);
-    final results = await Future.wait([
-      DatabaseService.listDatabases(widget.instance),
-      DatabaseService.listUsers(widget.instance),
-      DatabaseService.getConnectionInfo(widget.instance),
-    ]);
-    if (mounted) {
-      setState(() {
-        _dbs = results[0] as List<DbDatabase>;
-        _users = results[1] as List<DbUser>;
-        _connInfo = results[2] as String?;
-        _loading = false;
-      });
+    try {
+      final results = await Future.wait([
+        DatabaseService.listDatabases(inst),
+        DatabaseService.listUsers(inst),
+        DatabaseService.getConnectionInfo(inst),
+      ]);
+      if (mounted) {
+        setState(() {
+          _dbs = results[0] as List<DbDatabase>;
+          _users = results[1] as List<DbUser>;
+          _connInfo = results[2] as String?;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -149,11 +287,9 @@ class _InstanceDetailPageState extends State<_InstanceDetailPage> with SingleTic
     final ctrl = TextEditingController();
     final ok = await _inputDialog('添加数据库', '数据库名', ctrl);
     if (ok == true && ctrl.text.trim().isNotEmpty) {
-      final err = await DatabaseService.createDatabase(widget.instance, ctrl.text.trim());
-      if (mounted) {
-        if (err.isNotEmpty) _snack('创建失败: $err');
-        _load();
-      }
+      final err = await DatabaseService.createDatabase(inst, ctrl.text.trim());
+      _snack(err.isEmpty ? '创建成功' : '创建失败: $err');
+      _load();
     }
   }
 
@@ -162,7 +298,7 @@ class _InstanceDetailPageState extends State<_InstanceDetailPage> with SingleTic
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除数据库'),
-        content: Text('确定要删除数据库 "$name" 吗？\n此操作不可逆！'),
+        content: Text('确定要删除 "$name" 吗？\n此操作不可逆！'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
           FilledButton(style: FilledButton.styleFrom(backgroundColor: Colors.red),
@@ -171,11 +307,9 @@ class _InstanceDetailPageState extends State<_InstanceDetailPage> with SingleTic
       ),
     );
     if (ok == true) {
-      final err = await DatabaseService.deleteDatabase(widget.instance, name);
-      if (mounted) {
-        if (err.isNotEmpty) _snack('删除失败: $err');
-        _load();
-      }
+      final err = await DatabaseService.deleteDatabase(inst, name);
+      _snack(err.isEmpty ? '已删除' : '失败: $err');
+      _load();
     }
   }
 
@@ -198,11 +332,9 @@ class _InstanceDetailPageState extends State<_InstanceDetailPage> with SingleTic
       ),
     );
     if (ok == true && nameCtrl.text.isNotEmpty && passCtrl.text.isNotEmpty) {
-      final err = await DatabaseService.createUser(widget.instance, nameCtrl.text.trim(), passCtrl.text);
-      if (mounted) {
-        if (err.isNotEmpty) _snack('创建失败: $err');
-        _load();
-      }
+      final err = await DatabaseService.createUser(inst, nameCtrl.text.trim(), passCtrl.text);
+      _snack(err.isEmpty ? '用户已创建' : '失败: $err');
+      _load();
     }
   }
 
@@ -220,23 +352,19 @@ class _InstanceDetailPageState extends State<_InstanceDetailPage> with SingleTic
       ),
     );
     if (ok == true) {
-      final err = await DatabaseService.deleteUser(widget.instance, user.name, host: user.host ?? '%');
-      if (mounted) {
-        if (err.isNotEmpty) _snack('删除失败: $err');
-        _load();
-      }
+      final err = await DatabaseService.deleteUser(inst, user.name, host: user.host ?? '%');
+      _snack(err.isEmpty ? '已删除' : '失败: $err');
+      _load();
     }
   }
 
   Future<void> _changePassword(DbUser user) async {
     final ctrl = TextEditingController();
-    final ok = await _inputDialog('修改密码', '${user.name} 的新密码', ctrl, isPassword: true);
+    final ok = await _inputDialog('修改密码: ${user.name}', '新密码', ctrl, isPassword: true);
     if (ok == true && ctrl.text.isNotEmpty) {
-      final err = await DatabaseService.changePassword(widget.instance, user.name, ctrl.text, host: user.host ?? '%');
-      if (mounted) {
-        _snack(err.isEmpty ? '密码已修改' : '失败: $err');
-        _load();
-      }
+      final err = await DatabaseService.changePassword(inst, user.name, ctrl.text, host: user.host ?? '%');
+      _snack(err.isEmpty ? '密码已修改' : '失败: $err');
+      _load();
     }
   }
 
@@ -246,20 +374,18 @@ class _InstanceDetailPageState extends State<_InstanceDetailPage> with SingleTic
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('选择数据库'),
-        children: _dbs.map((d) => SimpleDialogOption(
-          onPressed: () => Navigator.pop(ctx, d.name),
-          child: Text(d.name),
-        )).toList(),
+        children: _dbs.map((d) => SimpleDialogOption(onPressed: () => Navigator.pop(ctx, d.name), child: Text(d.name))).toList(),
       ),
     );
     if (db != null) {
-      final err = await DatabaseService.grantPrivileges(widget.instance, user.name, db, host: user.host ?? '%');
-      if (mounted) _snack(err.isEmpty ? '权限已授予 ($db)' : '失败: $err');
+      final err = await DatabaseService.grantPrivileges(inst, user.name, db, host: user.host ?? '%');
+      _snack(err.isEmpty ? '权限已授予 ($db)' : '失败: $err');
     }
   }
 
   void _snack(String msg) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
+    if (mounted) ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
   }
 
   Future<bool?> _inputDialog(String title, String hint, TextEditingController ctrl, {bool isPassword = false}) {
@@ -285,154 +411,165 @@ class _InstanceDetailPageState extends State<_InstanceDetailPage> with SingleTic
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final inst = widget.instance;
 
     return Scaffold(
       appBar: AppBar(
         title: Text('${inst.type.label}${inst.inDocker ? ' (Docker)' : ''}'),
+        actions: [
+          if (inst.authUser != null)
+            IconButton(
+              icon: const Icon(Icons.vpn_key, size: 18),
+              tooltip: '切换认证',
+              onPressed: _showAuthDialog,
+            ),
+        ],
         bottom: TabBar(
           controller: _tabCtrl,
-          tabs: const [
-            Tab(text: '数据库'),
-            Tab(text: '用户'),
-            Tab(text: '连接'),
-          ],
+          tabs: const [Tab(text: '数据库'), Tab(text: '用户'), Tab(text: '连接')],
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabCtrl,
-              children: [
-                // Databases tab
-                _dbs.isEmpty
-                    ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        const Text('无数据库', style: TextStyle(color: Color(0xFF686F78))),
-                        if (inst.type != DbType.redis) ...[
-                          const SizedBox(height: 12),
-                          FilledButton.icon(
-                            icon: const Icon(Icons.add, size: 18),
-                            label: const Text('添加数据库'),
-                            onPressed: _addDatabase,
-                          ),
-                        ],
-                      ]))
-                    : Column(children: [
-                        if (inst.type != DbType.redis)
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: SizedBox(width: double.infinity, child: OutlinedButton.icon(
-                              icon: const Icon(Icons.add, size: 16),
-                              label: const Text('添加数据库'),
-                              onPressed: _addDatabase,
-                            )),
-                          ),
-                        Expanded(
-                          child: ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                            itemCount: _dbs.length,
-                            itemBuilder: (_, i) {
-                              final d = _dbs[i];
-                              return Card(
-                                child: ListTile(
-                                  leading: const Icon(Icons.table_chart, color: Colors.teal),
-                                  title: Text(d.name, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600)),
-                                  trailing: inst.type != DbType.redis
-                                      ? IconButton(
-                                          icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                                          onPressed: () => _deleteDatabase(d.name),
-                                        )
-                                      : null,
-                                ),
-                              );
-                            }),
-                        ),
-                      ]),
-                // Users tab
-                _users.isEmpty
-                    ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        const Text('无用户数据', style: TextStyle(color: Color(0xFF686F78))),
-                        const SizedBox(height: 12),
-                        FilledButton.icon(
-                          icon: const Icon(Icons.person_add, size: 18),
-                          label: const Text('添加用户'),
-                          onPressed: _addUser,
-                        ),
-                      ]))
-                    : Column(children: [
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: SizedBox(width: double.infinity, child: OutlinedButton.icon(
-                            icon: const Icon(Icons.person_add, size: 16),
-                            label: const Text('添加用户'),
-                            onPressed: _addUser,
-                          )),
-                        ),
-                        Expanded(
-                          child: ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                            itemCount: _users.length,
-                            itemBuilder: (_, i) {
-                              final u = _users[i];
-                              return Card(
-                                child: ExpansionTile(
-                                  leading: const Icon(Icons.person, color: Colors.blue),
-                                  title: Text(u.name, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600)),
-                                  subtitle: u.host != null ? Text('@${u.host}', style: const TextStyle(fontSize: 11, color: Color(0xFF686F78))) : null,
-                                  children: [
-                                    ListTile(
-                                      leading: const Icon(Icons.lock, size: 18),
-                                      title: const Text('修改密码', style: TextStyle(fontSize: 13)),
-                                      onTap: () => _changePassword(u),
-                                    ),
-                                    ListTile(
-                                      leading: const Icon(Icons.admin_panel_settings, size: 18),
-                                      title: const Text('授予权限', style: TextStyle(fontSize: 13)),
-                                      onTap: () => _grantPrivileges(u),
-                                    ),
-                                    ListTile(
-                                      leading: const Icon(Icons.delete, color: Colors.red, size: 18),
-                                      title: const Text('删除用户', style: TextStyle(fontSize: 13, color: Colors.red)),
-                                      onTap: () => _deleteUser(u),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                        ),
-                      ]),
-                // Connection info tab
-                ListView(padding: const EdgeInsets.all(16), children: [
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('连接信息', style: theme.textTheme.titleSmall),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(color: Colors.grey[900], borderRadius: BorderRadius.circular(8)),
-                          child: SelectableText(
-                            _connInfo?.isNotEmpty == true ? _connInfo! : '无法获取连接信息',
-                            style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.greenAccent, height: 1.5),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text('基本信息', style: TextStyle(fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 6),
-                        _infoRow('类型', inst.type.label),
-                        _infoRow('版本', inst.version ?? '未知'),
-                        _infoRow('部署方式', inst.inDocker ? 'Docker (${inst.containerName ?? ""})' : '宿主机'),
-                        _infoRow('端口', inst.port?.toString() ?? inst.defaultPort),
-                        _infoRow('状态', inst.status ?? '未知'),
-                      ]),
-                    ),
+      body: inst.authUser == null || inst.authFailed
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.lock_outline, size: 48, color: inst.authFailed ? Colors.red : theme.colorScheme.outline),
+                  const SizedBox(height: 16),
+                  Text(inst.authFailed ? '认证失败' : '需要认证', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Text(inst.authFailed ? '用户名或密码不正确' : '输入 ${inst.type.label} 的用户名和密码',
+                      style: const TextStyle(color: Color(0xFF686F78))),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.vpn_key, size: 18),
+                    label: const Text('输入认证信息'),
+                    onPressed: _showAuthDialog,
                   ),
                 ]),
+              ),
+            )
+          : _loading
+              ? const Center(child: CircularProgressIndicator())
+              : TabBarView(
+                  controller: _tabCtrl,
+                  children: [
+                    _buildDbTab(theme),
+                    _buildUserTab(theme),
+                    _buildConnTab(theme),
+                  ],
+                ),
+    );
+  }
+
+  Widget _buildDbTab(ThemeData theme) {
+    if (_dbs.isEmpty && inst.type != DbType.redis) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('无数据库', style: TextStyle(color: Color(0xFF686F78))),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(icon: const Icon(Icons.add, size: 16), label: const Text('添加数据库'), onPressed: _addDatabase),
+      ]));
+    }
+    return Column(children: [
+      if (inst.type != DbType.redis)
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(width: double.infinity, child: OutlinedButton.icon(
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('添加数据库'),
+            onPressed: _addDatabase,
+          )),
+        ),
+      Expanded(child: _dbs.isEmpty
+          ? const Center(child: Text('无数据库', style: TextStyle(color: Color(0xFF686F78))))
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              itemCount: _dbs.length,
+              itemBuilder: (_, i) {
+                final d = _dbs[i];
+                return Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.table_chart, color: Colors.teal),
+                    title: Text(d.name, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+                    trailing: inst.type != DbType.redis
+                        ? IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                            onPressed: () => _deleteDatabase(d.name))
+                        : null,
+                  ),
+                );
+              },
+            )),
+    ]);
+  }
+
+  Widget _buildUserTab(ThemeData theme) {
+    if (_users.isEmpty) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('无用户数据', style: TextStyle(color: Color(0xFF686F78))),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(icon: const Icon(Icons.person_add, size: 16), label: const Text('添加用户'), onPressed: _addUser),
+      ]));
+    }
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.all(12),
+        child: SizedBox(width: double.infinity, child: OutlinedButton.icon(
+          icon: const Icon(Icons.person_add, size: 16), label: const Text('添加用户'), onPressed: _addUser,
+        )),
+      ),
+      Expanded(child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        itemCount: _users.length,
+        itemBuilder: (_, i) {
+          final u = _users[i];
+          return Card(
+            child: ExpansionTile(
+              leading: const Icon(Icons.person, color: Colors.blue),
+              title: Text(u.name, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+              subtitle: u.host != null ? Text('@${u.host}', style: const TextStyle(fontSize: 11, color: Color(0xFF686F78))) : null,
+              children: [
+                ListTile(leading: const Icon(Icons.lock, size: 18), title: const Text('修改密码', style: TextStyle(fontSize: 13)),
+                    onTap: () => _changePassword(u)),
+                ListTile(leading: const Icon(Icons.admin_panel_settings, size: 18), title: const Text('授予权限', style: TextStyle(fontSize: 13)),
+                    onTap: () => _grantPrivileges(u)),
+                ListTile(leading: const Icon(Icons.delete, color: Colors.red, size: 18),
+                    title: const Text('删除用户', style: TextStyle(fontSize: 13, color: Colors.red)),
+                    onTap: () => _deleteUser(u)),
               ],
             ),
-    );
+          );
+        },
+      )),
+    ]);
+  }
+
+  Widget _buildConnTab(ThemeData theme) {
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('连接信息', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.grey[900], borderRadius: BorderRadius.circular(8)),
+              child: SelectableText(
+                _connInfo?.isNotEmpty == true ? _connInfo! : '无法获取',
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.greenAccent, height: 1.5),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _infoRow('类型', inst.type.label),
+            _infoRow('版本', inst.version ?? '未知'),
+            _infoRow('认证用户', inst.authUser ?? '-'),
+            _infoRow('部署', inst.inDocker ? 'Docker (${inst.containerName ?? ""})' : '宿主机'),
+            _infoRow('端口', inst.port?.toString() ?? inst.type.defaultPort),
+            _infoRow('状态', inst.status ?? '未知'),
+          ]),
+        ),
+      ),
+    ]);
   }
 
   Widget _infoRow(String label, String value) => Padding(
