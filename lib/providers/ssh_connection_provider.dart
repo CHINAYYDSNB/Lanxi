@@ -112,8 +112,8 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
       _service?.disconnect();
       _service = SshCommandService();
       await _service!.connect(config);
-      state = AsyncValue.data(_service);
       AppContext.i.ssh = _service;
+      state = AsyncValue.data(_service);
       await StorageService.instance.saveSshConnections([config.toJson()]);
       return null;
     } catch (e) {

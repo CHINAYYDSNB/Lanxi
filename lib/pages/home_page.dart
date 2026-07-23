@@ -8,6 +8,9 @@ import 'docker/network_list_page.dart';
 import 'docker/docker_settings_page.dart';
 import 'file/file_list_page.dart';
 import 'ssh/ssh_terminal_page.dart';
+import 'system/cron_page.dart';
+import 'system/monitor_page.dart';
+import 'database/database_page.dart';
 import 'firewall/firewall_page.dart';
 import 'settings/settings_page.dart';
 
@@ -77,6 +80,12 @@ class ResourcePage extends StatelessWidget {
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DockerSettingsPage())),
         ),
         const SizedBox(height: 10),
+        _Section('监控'),
+        _Row(icon: Icons.analytics_outlined, color: Colors.blue,
+          title: '服务器监控', subtitle: 'CPU / 内存 / IO / 网络 (面板API)',
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MonitorPage())),
+        ),
+        const SizedBox(height: 10),
         _Section('系统工具'),
         _Row(icon: Icons.folder, color: Colors.amber,
           title: '文件管理', subtitle: '浏览/编辑/删除',
@@ -86,9 +95,17 @@ class ResourcePage extends StatelessWidget {
           title: 'SSH 终端', subtitle: '远程命令行',
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SshTerminalPage())),
         ),
+        _Row(icon: Icons.schedule, color: Colors.teal,
+          title: '计划任务', subtitle: 'Crontab 管理',
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CronPage())),
+        ),
         _Row(icon: Icons.shield_outlined, color: Colors.red,
-          title: '防火墙', subtitle: 'UFW 管理',
+          title: '防火墙', subtitle: 'UFW / firewalld / iptables',
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FirewallPage())),
+        ),
+        _Row(icon: Icons.storage_outlined, color: Colors.blueGrey,
+          title: '数据库管理', subtitle: 'MySQL / PgSQL / MongoDB / Redis',
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DatabasePage())),
         ),
       ]),
     );
