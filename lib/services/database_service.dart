@@ -81,44 +81,44 @@ class DbInstance {
 
   bool get needsAuth => type != DbType.redis || authPass != null;
 
-  /// Build CLI connection args (without command).
+  /// Build CLI connection args (no password — uses env vars MYSQL_PWD / PGPASSWORD).
   String get connArgs {
     final u = authUser ?? type.defaultUser;
-    final p = authPass;
     final buf = StringBuffer();
-    if (p != null && p.isNotEmpty) {
-      if (type == DbType.mysql) {
-        buf.write('-u$u -p$p');
-      } else if (type == DbType.postgresql) {
-        buf.write('-U $u');
-        // pg uses PGPASSWORD env
-      } else if (type == DbType.mongodb) {
-        buf.write('-u $u -p $p --authenticationDatabase admin');
-      } else if (type == DbType.redis) {
-        buf.write('-a $p --no-auth-warning');
+    if (type == DbType.mysql) {
+      buf.write('-u$u');
+    } else if (type == DbType.postgresql) {
+      buf.write('-U $u');
+      if (inDocker) buf.write(' -h localhost');
+    } else if (type == DbType.mongodb) {
+      buf.write('-u $u');
+      if (authPass != null && authPass!.isNotEmpty) {
+        buf.write(' -p $authPass --authenticationDatabase admin');
       }
-    } else {
-      if (type == DbType.mysql) buf.write('-u$u');
-      if (type == DbType.postgresql) buf.write('-U $u');
+    } else if (type == DbType.redis) {
+      if (authPass != null && authPass!.isNotEmpty) {
+        buf.write('-a $authPass --no-auth-warning');
+      }
     }
     return buf.toString();
   }
 
-  /// Wrap shell command for execution (docker exec or direct).
+  /// Wrap command with env vars (MYSQL_PWD, PGPASSWORD) for password security.
   String wrapCmd(String cmd) {
+    final envs = <String>[];
+    final p = authPass;
+    if (p != null && p.isNotEmpty) {
+      final escapedP = p.replaceAll("'", "'\\''");
+      if (type == DbType.mysql) envs.add("MYSQL_PWD='$escapedP'");
+      if (type == DbType.postgresql) envs.add("PGPASSWORD='$escapedP'");
+    }
+    final prefix = envs.isNotEmpty ? '${envs.join(' ')} ' : '';
+
     if (inDocker && containerName != null) {
       final escaped = cmd.replaceAll("'", "'\\''");
-      // Build env prefix for postgres PGPASSWORD
-      String prefix = '';
-      if (type == DbType.postgresql && authPass != null && authPass!.isNotEmpty) {
-        prefix = 'PGPASSWORD=\'${authPass!.replaceAll("'", "'\\''")}\' ';
-      }
       return 'docker exec $containerName sh -c \'$prefix$escaped\'';
     }
-    if (type == DbType.postgresql && authPass != null && authPass!.isNotEmpty) {
-      return 'PGPASSWORD=\'${authPass!.replaceAll("'", "'\\''")}\' $cmd';
-    }
-    return cmd;
+    return '$prefix$cmd';
   }
 }
 
@@ -230,40 +230,35 @@ class DatabaseService {
 
   // ─── Auto credential detection ───
 
-  /// Try to read credentials from Docker environment variables.
+  /// Try to read credentials from Docker environment variables using grep.
   /// Returns (user, password) if found.
   static Future<({String user, String pass})?> tryDetectCredentials(DbInstance inst) async {
     if (!inst.inDocker || inst.containerName == null) return null;
     final envVars = inst.type.passwordEnvVars;
     try {
-      // Get all env vars at once
+      // Use grep to find env var values (more reliable than JSON regex)
+      final grepPattern = envVars.map((v) => '^$v=').join('\\|');
       final r = await AppContext.i.exec(
-        'docker inspect --format \'{{json .Config.Env}}\' ${inst.containerName} 2>/dev/null',
+        "docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' ${inst.containerName} 2>/dev/null | grep -E '$grepPattern' | head -3",
         timeout: const Duration(seconds: 5),
       );
       if (!r.isSuccess || r.stdout.trim().isEmpty) return null;
-      final env = r.stdout.trim();
-      String? user;
+
+      String? user = inst.type.defaultUser;
       String? pass;
-      for (final varName in envVars) {
-        // Look for VARNAME=value in the JSON array
-        final pattern = RegExp('"$varName=([^"]*)"');
-        final match = pattern.firstMatch(env);
-        if (match != null) {
-          final val = match.group(1)!;
-          if (val.isNotEmpty) {
-            if (varName.contains('USERNAME') || varName.contains('USER')) {
-              user = val;
-            } else {
-              pass = val;
-              if (user == null) user = inst.type.defaultUser;
-            }
-          }
+      for (final line in r.stdout.split('\n')) {
+        final eq = line.indexOf('=');
+        if (eq < 0) continue;
+        final key = line.substring(0, eq);
+        final val = line.substring(eq + 1);
+        if (val.isEmpty) continue;
+        if (key.contains('USERNAME') || key.contains('USER')) {
+          user = val;
+        } else {
+          pass = val;
         }
       }
-      if (pass != null || user != null) {
-        return (user: user ?? inst.type.defaultUser, pass: pass ?? '');
-      }
+      if (pass != null) return (user: user!, pass: pass);
     } catch (_) {}
     return null;
   }
@@ -271,26 +266,33 @@ class DatabaseService {
   /// Test if credentials work for given instance.
   static Future<String?> testCredentials(DbInstance inst) async {
     final cmd = switch (inst.type) {
-      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "SELECT 1" 2>&1',
-      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "SELECT 1" 2>&1',
-      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.runCommand({ping:1})" --quiet 2>&1',
-      DbType.redis => '${inst.cliCmd} ${inst.connArgs} PING 2>&1',
+      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "SELECT 1"',
+      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "SELECT 1"',
+      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.runCommand({ping:1})" --quiet',
+      DbType.redis => '${inst.cliCmd} ${inst.connArgs} PING',
     };
     final r = await AppContext.i.exec(inst.wrapCmd(cmd), timeout: const Duration(seconds: 8));
-    if (r.exitCode == 0 && (r.stdout.contains('1') || r.stdout.contains('PONG') || r.stdout.contains('ok'))) {
-      return null; // success
-    }
-    return r.stderr.isNotEmpty ? r.stderr : r.stdout;
+    final ok = r.exitCode == 0 &&
+        (r.stdout.contains('1') || r.stdout.contains('PONG') || r.stdout.contains('ok'));
+    if (ok) return null;
+    return _errMsg(r);
+  }
+
+  /// Extract error message from SshResult.
+  static String _errMsg(dynamic r) {
+    final stderr = r.stderr?.toString() ?? '';
+    final stdout = r.stdout?.toString() ?? '';
+    return stderr.isNotEmpty ? stderr : (stdout.isNotEmpty ? stdout : '命令执行失败');
   }
 
   // ─── Database operations ───
 
   static Future<List<DbDatabase>> listDatabases(DbInstance inst) async {
     final cmd = switch (inst.type) {
-      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "SHOW DATABASES" -N 2>&1',
-      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "\\\\l" -t -A -F "|" 2>&1',
-      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.adminCommand({listDatabases:1}).databases.forEach(d=>print(d.name))" --quiet 2>&1',
-      DbType.redis => 'echo "__REDIS__"; ${inst.cliCmd} ${inst.connArgs} CONFIG GET databases 2>&1',
+      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "SHOW DATABASES" -N',
+      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "\\\\l" -t -A -F "|"',
+      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.adminCommand({listDatabases:1}).databases.forEach(d=>print(d.name))" --quiet',
+      DbType.redis => 'echo "__REDIS__"; ${inst.cliCmd} ${inst.connArgs} CONFIG GET databases',
     };
 
     final r = await AppContext.i.exec(inst.wrapCmd(cmd), timeout: const Duration(seconds: 10));
@@ -320,34 +322,34 @@ class DatabaseService {
 
   static Future<String> createDatabase(DbInstance inst, String name) async {
     final cmd = switch (inst.type) {
-      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "CREATE DATABASE \\`$name\\`" 2>&1',
-      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "CREATE DATABASE \\"$name\\"" 2>&1',
-      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.getSiblingDB(\'$name\').createCollection(\'_init\')" --quiet 2>&1',
+      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "CREATE DATABASE \\`$name\\`"',
+      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "CREATE DATABASE \\"$name\\""',
+      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.getSiblingDB(\'$name\').createCollection(\'_init\')" --quiet',
       DbType.redis => 'echo "Redis: use SELECT"',
     };
     final r = await AppContext.i.exec(inst.wrapCmd(cmd), timeout: const Duration(seconds: 8));
-    return r.isSuccess ? '' : r.stderr;
+    return r.isSuccess ? '' : _errMsg(r);
   }
 
   static Future<String> deleteDatabase(DbInstance inst, String name) async {
     final cmd = switch (inst.type) {
-      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "DROP DATABASE \\`$name\\`" 2>&1',
-      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "DROP DATABASE \\"$name\\"" 2>&1',
-      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.getSiblingDB(\'$name\').dropDatabase()" --quiet 2>&1',
+      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "DROP DATABASE \\`$name\\`"',
+      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "DROP DATABASE \\"$name\\""',
+      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.getSiblingDB(\'$name\').dropDatabase()" --quiet',
       DbType.redis => 'echo "Redis: use FLUSHDB"',
     };
     final r = await AppContext.i.exec(inst.wrapCmd(cmd), timeout: const Duration(seconds: 8));
-    return r.isSuccess ? '' : r.stderr;
+    return r.isSuccess ? '' : _errMsg(r);
   }
 
   // ─── User operations ───
 
   static Future<List<DbUser>> listUsers(DbInstance inst) async {
     final cmd = switch (inst.type) {
-      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "SELECT user,host FROM mysql.user" -N 2>&1',
-      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "\\\\du" -t -A 2>&1',
-      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.system.users.find().forEach(u=>print(u.user+\'@\'+(u.db||\'\')))" admin --quiet 2>&1',
-      DbType.redis => '${inst.cliCmd} ${inst.connArgs} ACL LIST 2>&1 || echo "single_user"',
+      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "SELECT user,host FROM mysql.user" -N',
+      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "\\\\du" -t -A',
+      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.system.users.find().forEach(u=>print(u.user+\'@\'+(u.db||\'\')))" admin --quiet',
+      DbType.redis => '${inst.cliCmd} ${inst.connArgs} ACL LIST || echo "single_user"',
     };
 
     final r = await AppContext.i.exec(inst.wrapCmd(cmd), timeout: const Duration(seconds: 8));
@@ -384,46 +386,46 @@ class DatabaseService {
 
   static Future<String> createUser(DbInstance inst, String name, String password, {String host = '%'}) async {
     final cmd = switch (inst.type) {
-      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "CREATE USER \'$name\'@\'$host\' IDENTIFIED BY \'$password\'" 2>&1',
-      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "CREATE USER \\"$name\\" WITH PASSWORD \'$password\'" 2>&1',
-      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.createUser({user:\'$name\',pwd:\'$password\',roles:[]})" --quiet 2>&1',
-      DbType.redis => '${inst.cliCmd} ${inst.connArgs} ACL SETUSER $name on >$password 2>&1',
+      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "CREATE USER \'$name\'@\'$host\' IDENTIFIED BY \'$password\'"',
+      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "CREATE USER \\"$name\\" WITH PASSWORD \'$password\'"',
+      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.createUser({user:\'$name\',pwd:\'$password\',roles:[]})" --quiet',
+      DbType.redis => '${inst.cliCmd} ${inst.connArgs} ACL SETUSER $name on >$password',
     };
     final r = await AppContext.i.exec(inst.wrapCmd(cmd), timeout: const Duration(seconds: 8));
-    return r.isSuccess ? '' : r.stderr;
+    return r.isSuccess ? '' : _errMsg(r);
   }
 
   static Future<String> deleteUser(DbInstance inst, String name, {String host = '%'}) async {
     final cmd = switch (inst.type) {
-      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "DROP USER \'$name\'@\'$host\'" 2>&1',
-      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "DROP USER \\"$name\\"" 2>&1',
-      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.dropUser(\'$name\')" --quiet 2>&1',
-      DbType.redis => '${inst.cliCmd} ${inst.connArgs} ACL DELUSER $name 2>&1',
+      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "DROP USER \'$name\'@\'$host\'"',
+      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "DROP USER \\"$name\\""',
+      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.dropUser(\'$name\')" --quiet',
+      DbType.redis => '${inst.cliCmd} ${inst.connArgs} ACL DELUSER $name',
     };
     final r = await AppContext.i.exec(inst.wrapCmd(cmd), timeout: const Duration(seconds: 8));
-    return r.isSuccess ? '' : r.stderr;
+    return r.isSuccess ? '' : _errMsg(r);
   }
 
   static Future<String> changePassword(DbInstance inst, String name, String newPass, {String host = '%'}) async {
     final cmd = switch (inst.type) {
-      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "ALTER USER \'$name\'@\'$host\' IDENTIFIED BY \'$newPass\'" 2>&1',
-      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "ALTER USER \\"$name\\" WITH PASSWORD \'$newPass\'" 2>&1',
-      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.changeUserPassword(\'$name\',\'$newPass\')" --quiet 2>&1',
-      DbType.redis => '${inst.cliCmd} ${inst.connArgs} ACL SETUSER $name resetpass on >$newPass 2>&1',
+      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "ALTER USER \'$name\'@\'$host\' IDENTIFIED BY \'$newPass\'"',
+      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "ALTER USER \\"$name\\" WITH PASSWORD \'$newPass\'"',
+      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.changeUserPassword(\'$name\',\'$newPass\')" --quiet',
+      DbType.redis => '${inst.cliCmd} ${inst.connArgs} ACL SETUSER $name resetpass on >$newPass',
     };
     final r = await AppContext.i.exec(inst.wrapCmd(cmd), timeout: const Duration(seconds: 8));
-    return r.isSuccess ? '' : r.stderr;
+    return r.isSuccess ? '' : _errMsg(r);
   }
 
   static Future<String> grantPrivileges(DbInstance inst, String user, String database, {String host = '%'}) async {
     final cmd = switch (inst.type) {
-      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "GRANT ALL PRIVILEGES ON \\`$database\\`.* TO \'$user\'@\'$host\'; FLUSH PRIVILEGES" 2>&1',
-      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "GRANT ALL PRIVILEGES ON DATABASE \\"$database\\" TO \\"$user\\"" 2>&1',
-      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.grantRolesToUser(\'$user\',[{role:\'readWrite\',db:\'$database\'}])" --quiet 2>&1',
-      DbType.redis => '${inst.cliCmd} ${inst.connArgs} ACL SETUSER $user ~* &* +@all 2>&1',
+      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "GRANT ALL PRIVILEGES ON \\`$database\\`.* TO \'$user\'@\'$host\'; FLUSH PRIVILEGES"',
+      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "GRANT ALL PRIVILEGES ON DATABASE \\"$database\\" TO \\"$user\\""',
+      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.grantRolesToUser(\'$user\',[{role:\'readWrite\',db:\'$database\'}])" --quiet',
+      DbType.redis => '${inst.cliCmd} ${inst.connArgs} ACL SETUSER $user ~* &* +@all',
     };
     final r = await AppContext.i.exec(inst.wrapCmd(cmd), timeout: const Duration(seconds: 8));
-    return r.isSuccess ? '' : r.stderr;
+    return r.isSuccess ? '' : _errMsg(r);
   }
 
   // ─── Connection info ───
@@ -455,10 +457,10 @@ class DatabaseService {
     }
 
     final cmd = switch (inst.type) {
-      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "SELECT @@hostname,@@port,@@version" -N 2>&1',
-      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "SELECT inet_server_addr(),inet_server_port(),version()" -t -A 2>&1',
-      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.runCommand({connectionStatus:1})" --quiet 2>&1',
-      DbType.redis => '${inst.cliCmd} ${inst.connArgs} INFO server 2>&1 | grep -E "tcp_port|redis_version|os"',
+      DbType.mysql => '${inst.cliCmd} ${inst.connArgs} -e "SELECT @@hostname,@@port,@@version" -N',
+      DbType.postgresql => '${inst.cliCmd} ${inst.connArgs} -c "SELECT inet_server_addr(),inet_server_port(),version()" -t -A',
+      DbType.mongodb => '${inst.cliCmd} ${inst.connArgs} --eval "db.runCommand({connectionStatus:1})" --quiet',
+      DbType.redis => '${inst.cliCmd} ${inst.connArgs} INFO server | grep -E "tcp_port|redis_version|os"',
     };
     try {
       final r = await AppContext.i.exec(inst.wrapCmd(cmd), timeout: const Duration(seconds: 5));

@@ -104,7 +104,29 @@ class _CronPageState extends State<CronPage> {
           IconButton(icon: const Icon(Icons.add), onPressed: () => _addOrEdit()),
         ],
       ),
-      body: _loading
+      body: Column(children: [
+        // Info banner
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.blue.withAlpha(15),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blue.withAlpha(40)),
+          ),
+          child: Row(children: [
+            const Icon(Icons.info_outline, size: 16, color: Colors.blue),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                '计划任务调用系统 crontab 命令，部分面板可能不可见，请使用 crontab -l 查看',
+                style: TextStyle(fontSize: 12, color: Color(0xFF686F78)),
+              ),
+            ),
+          ]),
+        ),
+        Expanded(child: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -157,6 +179,8 @@ class _CronPageState extends State<CronPage> {
                           ),
                         );
                       }),
+        ),
+      ]),
     );
   }
 }

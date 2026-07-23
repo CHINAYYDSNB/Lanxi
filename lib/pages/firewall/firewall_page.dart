@@ -218,7 +218,6 @@ class _FirewallPageState extends State<FirewallPage> {
                       segments: const [
                         ButtonSegment(value: 'tcp', label: Text('TCP')),
                         ButtonSegment(value: 'udp', label: Text('UDP')),
-                        ButtonSegment(value: 'both', label: Text('Both')),
                       ],
                       selected: {v},
                       onSelectionChanged: (s) { proto.value = s.first; },
@@ -241,22 +240,11 @@ class _FirewallPageState extends State<FirewallPage> {
     final pr = proto.value;
 
     if (_fwType == FirewallType.ufw) {
-      final input = pr == 'both' ? port : '$port/$pr';
-      await _addUfw(input);
+      await _addUfw('$port/$pr');
     } else if (_fwType == FirewallType.firewalld) {
-      if (pr == 'both') {
-        await _addFirewalld('$port/tcp');
-        await _addFirewalld('$port/udp');
-      } else {
-        await _addFirewalld('$port/$pr');
-      }
+      await _addFirewalld('$port/$pr');
     } else {
-      if (pr == 'both') {
-        await _addIptables('$port/tcp');
-        await _addIptables('$port/udp');
-      } else {
-        await _addIptables('$port/$pr');
-      }
+      await _addIptables('$port/$pr');
     }
     _load();
   }
