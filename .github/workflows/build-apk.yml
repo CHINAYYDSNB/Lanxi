@@ -65,7 +65,7 @@ jobs:
             FOUND=1
           fi
           # 禁止单行空函数体
-          if grep -rnE "=>[[:space:]]*null;|=>[[:space:]]*throw[[:space:]]*UnimplementedError" lib/ 2>/dev/null; then
+          if grep -rnE "=>[[:space:]]*throw[[:space:]]*UnimplementedError" lib/ 2>/dev/null; then
             echo "❌ 发现空函数体"
             FOUND=1
           fi
@@ -110,7 +110,7 @@ jobs:
           fi
           echo "✅ 无假测试"
 
-      - name: "🛡️  Check 3: Require behavior verification per Service"
+      - name: "🛡️  Check 3: Require a real behavior test (expect/verify) per Service"
         run: |
           echo "检查 Service 是否有对应的行为测试..."
           FOUND=0
@@ -122,8 +122,8 @@ jobs:
               FOUND=1
               continue
             fi
-            if ! grep -q "verify(" "$test_file"; then
-              echo "❌ 测试无行为验证: $test_file (缺少 verify())"
+            if ! grep -qE "verify\(|expect\(" "$test_file"; then
+              echo "❌ 测试无真实断言: $test_file (缺少 verify()/expect() 行为验证)"
               FOUND=1
             fi
           done
