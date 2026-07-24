@@ -2,12 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lanxi/services/database_service.dart';
 
 void main() {
-  test('DbTypeMeta exposes labels and default ports', () {
-    expect(DbTypeMeta.label(DbType.mysql), 'MySQL');
-    expect(DbTypeMeta.label(DbType.redis), 'Redis');
-    expect(DbTypeMeta.defaultPort(DbType.mysql), '3306');
-    expect(DbTypeMeta.defaultPort(DbType.postgresql), '5432');
-    expect(DbTypeMeta.defaultUser(DbType.mongodb), 'admin');
+  test('DbType exposes labels and default ports via extension', () {
+    expect(DbType.mysql.label, 'MySQL');
+    expect(DbType.redis.label, 'Redis');
+    expect(DbType.mysql.defaultPort, '3306');
+    expect(DbType.postgresql.defaultPort, '5432');
+    expect(DbType.mongodb.defaultUser, 'admin');
   });
 
   test('DbInstance builds connection args and wraps commands', () {
@@ -27,6 +27,6 @@ void main() {
   });
 
   test('DbInstance.label includes version', () {
-    expect(const DbInstance(type: DbType.mysql, version: '8.0').label, 'MySQL 8.0');
+    expect(DbInstance(type: DbType.mysql, version: '8.0').label, 'MySQL 8.0');
   });
 }

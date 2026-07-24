@@ -3,7 +3,7 @@ import 'package:lanxi/services/panel_api_service.dart';
 
 void main() {
   test('PanelCheckResult exposes success and msg', () {
-    const r = PanelCheckResult(success: true, msg: 'ok');
+    final r = PanelCheckResult(success: true, msg: 'ok');
     expect(r.success, isTrue);
     expect(r.msg, 'ok');
   });
