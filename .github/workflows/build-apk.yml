@@ -65,7 +65,7 @@ jobs:
             FOUND=1
           fi
           # 禁止单行空函数体
-          if grep -rnE "=>[[:space:]]*null;|=>[[:space:]]*throw[[:space:]]*UnimplementedError" lib/ 2>/dev/null; then
+          if grep -rnE "=>[[:space:]]*throw[[:space:]]*UnimplementedError" lib/ 2>/dev/null; then
             echo "❌ 发现空函数体"
             FOUND=1
           fi

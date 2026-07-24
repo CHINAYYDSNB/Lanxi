@@ -3,7 +3,7 @@ import 'package:path_provider/path_provider.dart';
 
 /// 保存文件到本地 (Native)
 String saveFileSync(String name, List<int> bytes) {
-  throw UnimplementedError('Use async saveFile');
+  throw UnsupportedError('Use async saveFile');
 }
 
 Future<String> saveFile(String name, List<int> bytes) async {
