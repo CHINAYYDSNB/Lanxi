@@ -1,7 +1,9 @@
-name: Build APK
+name: Build APK + AI Anti-Cheat
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -10,12 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # 需要 git diff HEAD~1 HEAD 来做 commit 检查
 
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.6'
           channel: 'stable'
 
+      # ===== 还原签名密钥 =====
       - name: Restore keystore
         continue-on-error: true
         run: |
@@ -32,9 +37,299 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Analyze
+      # ===== Analyze（不卡绿，仅参考） =====
+      - name: Analyze (advisory)
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        continue-on-error: true
 
+      # ==========================================
+      #  防骗检查 1: 禁止空实现
+      # ==========================================
+      - name: "🛡️ Check 1: Ban empty implementations"
+        run: |
+          echo "扫描空实现和 TODO ..."
+          FOUND=0
+
+          # 禁止 throw UnimplementedError()
+          if grep -rn "throw\s*UnimplementedError" lib/ 2>/dev/null; then
+            echo "❌ FAIL: 发现空实现 (throw UnimplementedError)"
+            FOUND=1
+          fi
+
+          # 禁止代码中的 // TODO（不含文档注释 /// TODO）
+          if grep -rn "^[[:space:]]*//[[:space:]]*TODO" lib/ 2>/dev/null; then
+            echo "❌ FAIL: 发现未完成的 TODO 注释"
+            FOUND=1
+          fi
+
+          # 禁止单行空函数 => null;
+          if grep -rnE "=>[[:space:]]*null\s*;" lib/ 2>/dev/null; then
+            echo "❌ FAIL: 发现空函数体 (=> null;)"
+            FOUND=1
+          fi
+
+          if [ "$FOUND" -eq 1 ]; then
+            echo ""
+            echo "══════════════════════════════════════════"
+            echo "  ❌ AI CHEAT DETECTED: 空实现"
+            echo "  这些代码只有壳，功能没有真正实现"
+            echo "  删除 UnimplementedError，补上实际逻辑"
+            echo "══════════════════════════════════════════"
+            exit 1
+          fi
+          echo "✅ 无空实现"
+
+      # ==========================================
+      #  防骗检查 2: 禁止假测试
+      # ==========================================
+      - name: "🛡️ Check 2: Ban fake tests"
+        run: |
+          echo "扫描假测试 ..."
+          FOUND=0
+
+          # 禁止 expect(true, true) / expect(false, false)
+          if grep -rnE "expect\(\s*true\s*,\s*true\s*\)" test/ 2>/dev/null; then
+            echo "❌ FAIL: 发现假断言 expect(true, true)"
+            FOUND=1
+          fi
+
+          if grep -rnE "expect\(\s*false\s*,\s*false\s*\)" test/ 2>/dev/null; then
+            echo "❌ FAIL: 发现假断言 expect(false, false)"
+            FOUND=1
+          fi
+
+          # 禁止 expect(1, 1) / expect(0, 0) 类型假断言
+          if grep -rnE "expect\(\s*1\s*,\s*1\s*\)" test/ 2>/dev/null; then
+            echo "❌ FAIL: 发现假断言 expect(1, 1)"
+            FOUND=1
+          fi
+
+          if grep -rnE "expect\(\s*0\s*,\s*0\s*\)" test/ 2>/dev/null; then
+            echo "❌ FAIL: 发现假断言 expect(0, 0)"
+            FOUND=1
+          fi
+
+          # 禁止 expect("str", "str") 形式的同值假断言
+          if grep -rnE "expect\(\s*['\"][^'\"]+['\"]\s*,\s*['\"][^'\"]+['\"]\s*\)" test/ 2>/dev/null; then
+            echo "❌ FAIL: 发现同值假断言 expect('X', 'X')"
+            FOUND=1
+          fi
+
+          # 禁止测试文件没有任何 expect 或 verify
+          for f in $(find test -name "*_test.dart" 2>/dev/null); do
+            if ! grep -qE "expect\(|verify\(" "$f"; then
+              echo "❌ FAIL: 测试文件无任何断言: $f"
+              FOUND=1
+            fi
+          done
+
+          if [ "$FOUND" -eq 1 ]; then
+            echo ""
+            echo "══════════════════════════════════════════"
+            echo "  ❌ AI CHEAT DETECTED: 假测试"
+            echo "  expect(X, X) 永远是 true，毫无意义"
+            echo "  测试必须验证具体行为，不是自欺欺人"
+            echo "══════════════════════════════════════════"
+            exit 1
+          fi
+          echo "✅ 无假测试"
+
+      # ==========================================
+      #  防骗检查 3: Service 必须有行为测试
+      # ==========================================
+      - name: "🛡️ Check 3: Require behavior verification"
+        run: |
+          echo "检查每个 Service 是否有对应的行为测试 ..."
+          FOUND=0
+
+          if [ -d lib/services ]; then
+            for service in $(find lib/services -name "*.dart" -not -name "*.g.dart" -not -name "*.freezed.dart" 2>/dev/null); do
+              base=$(basename "$service" .dart)
+              test_file=$(find test -name "${base}_test.dart" 2>/dev/null | head -1)
+
+              if [ -z "$test_file" ]; then
+                echo "❌ FAIL: 缺少测试文件 — $service"
+                echo "   期望: test/services/${base}_test.dart 或 test/**/${base}_test.dart"
+                FOUND=1
+                continue
+              fi
+
+              # 测试文件必须有 verify() 行为验证
+              if ! grep -q "verify(" "$test_file"; then
+                echo "❌ FAIL: 测试无行为验证 — $test_file (缺少 verify())"
+                FOUND=1
+              fi
+            done
+          else
+            echo "ⓘ lib/services/ 目录不存在，跳过此检查"
+          fi
+
+          if [ "$FOUND" -eq 1 ]; then
+            echo ""
+            echo "══════════════════════════════════════════"
+            echo "  ❌ AI CHEAT DETECTED: 缺少行为测试"
+            echo "  每个 Service 必须有对应测试 + verify()"
+            echo "  如果删掉实现，测试必须变红，否则就是假测试"
+            echo "══════════════════════════════════════════"
+            exit 1
+          fi
+          echo "✅ 所有 Service 都有行为测试"
+
+      # ==========================================
+      #  防骗检查 4: Commit Message 诚实性
+      # ==========================================
+      - name: "🛡️ Check 4: Ban lying commit messages"
+        run: |
+          echo "检查 commit message 是否撒谎 ..."
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          echo "最新 commit: $COMMIT_MSG"
+
+          # ── 4a: done: 前缀检查 ──
+          if echo "$COMMIT_MSG" | head -1 | grep -q "^done:"; then
+            # 必须有测试文件改动
+            if ! git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q "test/"; then
+              echo "❌ FAIL: done: 但本次 commit 没有改动任何测试文件"
+              echo "   要么补测试，要么改前缀为 wip:"
+              exit 1
+            fi
+            # 必须有验证证据
+            if ! echo "$COMMIT_MSG" | grep -qE "analyze|test|verify|验证|passed|0 error|coverage"; then
+              echo "❌ FAIL: done: 但 commit body 中没有验证证据"
+              echo "   请附上 flutter analyze / flutter test / coverage 结果"
+              exit 1
+            fi
+            echo "✅ done: 有测试改动 + 验证证据"
+          fi
+
+          # ── 4b: fix: 前缀检查 ──
+          if echo "$COMMIT_MSG" | head -1 | grep -q "^fix:"; then
+            # fix: 必须伴随测试改动或验证证据
+            HAS_TEST_CHANGE=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -c "test/" || true)
+            HAS_EVIDENCE=$(echo "$COMMIT_MSG" | grep -cE "analyze|test|verify|验证|passed|0 error" || true)
+            if [ "$HAS_TEST_CHANGE" -eq 0 ] && [ "$HAS_EVIDENCE" -eq 0 ]; then
+              echo "❌ FAIL: fix: 但没有测试改动，也没有验证证据"
+              echo "   fix: 前缀 = 你声称修复了问题 → 必须有证据"
+              echo "   补测试或用 wip: 前缀"
+              exit 1
+            fi
+            echo "✅ fix: 有测试改动或验证证据"
+          fi
+
+          # ── 4c: 禁止 fix:/feat: + 完成类表述 ──
+          if echo "$COMMIT_MSG" | head -1 | grep -qE "^(fix|feat):"; then
+            if echo "$COMMIT_MSG" | grep -qE "完成|搞定|修复|fixed|done|完美|OK|ok"; then
+              echo "❌ FAIL: 禁止 fix:/feat: + 完成表述"
+              echo "   改用 wip: / partial: / done: 前缀系统"
+              exit 1
+            fi
+          fi
+
+          # ── 4d: 禁止浮夸词 ──
+          for word in "搞定" "完美解决" "完全修复" "彻底解决" "100%" "肯定可以" "绝对没问题" "应该没问题" "理论上没问题"; do
+            if echo "$COMMIT_MSG" | grep -q "$word"; then
+              echo "❌ FAIL: 禁止浮夸表述 — '$word'"
+              echo "   工程里没有 100%，用'已验证'代替'没问题'"
+              exit 1
+            fi
+          done
+
+          echo "✅ Commit message 通过所有诚实性检查"
+
+      # ==========================================
+      #  防骗检查 5: 壳函数检测
+      # ==========================================
+      - name: "🛡️ Check 5: Shell function detection"
+        run: |
+          echo "检查函数是否只有 print/log 没有实际行为 ..."
+          FOUND=0
+
+          if [ -d lib/services ]; then
+            for f in $(find lib/services -name "*.dart" -not -name "*.g.dart" 2>/dev/null); do
+              # 检测函数体只有 print/debugPrint 的空壳
+              shell_funcs=$(awk '
+                /Future.*\{/ || /void.*\{/ || /String.*\{/ {flag=1; count=0; has_real=0; func=$0}
+                flag {count++}
+                /print\(|debugPrint\(/ {}
+                /exec\(|run\(|connect\(|write\(|query\(|execute\(|readBytes\(|thenReturn\(|\.post\(|\.get\(/ {has_real=1}
+                /^\t*\}/ {
+                  if(flag && count<6 && !has_real){
+                    print "❌ FAIL: 疑似空壳函数在 " FILENAME " → " func
+                  }
+                  flag=0
+                }
+              ' "$f")
+              if [ -n "$shell_funcs" ]; then
+                echo "$shell_funcs"
+                FOUND=1
+              fi
+            done
+          fi
+
+          if [ "$FOUND" -eq 1 ]; then
+            echo ""
+            echo "══════════════════════════════════════════"
+            echo "  ⚠️  AI CHEAT DETECTED: 疑似空壳函数"
+            echo "  函数体只有 print/log，没有实际副作用"
+            echo "══════════════════════════════════════════"
+            exit 1
+          fi
+          echo "✅ 函数体检查通过"
+
+      # ==========================================
+      #  跑测试
+      # ==========================================
+      - name: Run tests
+        run: flutter test --coverage
+
+      # ==========================================
+      #  覆盖率检查（与 commit 联动）
+      # ==========================================
+      - name: Check coverage
+        run: |
+          echo "检查测试覆盖率 ..."
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+
+          # 提取覆盖率百分比
+          if [ -f coverage/lcov.info ]; then
+            # 用 lcov 工具统计行覆盖率
+            sudo apt-get update -qq && sudo apt-get install -y -qq lcov 2>/dev/null || true
+            COVERAGE=$(lcov --summary coverage/lcov.info 2>/dev/null | grep "lines" | grep -oP '\d+\.\d+' | head -1 || echo "0")
+            COVERAGE_INT=$(echo "$COVERAGE" | cut -d. -f1)
+            echo "行覆盖率: ${COVERAGE}%"
+          else
+            echo "⚠️ 未找到 coverage/lcov.info，设置覆盖率为 0"
+            COVERAGE=0
+            COVERAGE_INT=0
+          fi
+
+          MIN_COVERAGE=70
+
+          # ── 核心规则：fix:/done: + 覆盖率不达标 = CI 红 ──
+          if echo "$COMMIT_MSG" | head -1 | grep -qE "^(fix|done):"; then
+            if [ "$COVERAGE_INT" -lt "$MIN_COVERAGE" ]; then
+              echo ""
+              echo "══════════════════════════════════════════"
+              echo "  ❌ BUILD FAILED: 覆盖率不达标"
+              echo "  你的 commit 前缀是 fix:/done:"
+              echo "  但测试覆盖率只有 ${COVERAGE}% (要求 ≥ ${MIN_COVERAGE}%)"
+              echo "  fix:/done: = 你声称完成了 → 覆盖率必须达标"
+              echo "  改用 wip: 前缀，或补测试提到 ${MIN_COVERAGE}%"
+              echo "══════════════════════════════════════════"
+              exit 1
+            fi
+            echo "✅ fix:/done: + 覆盖率 ${COVERAGE}% ≥ ${MIN_COVERAGE}% → 通过"
+          else
+            # wip:/partial:/shell: 等前缀，覆盖率警告但不阻断
+            if [ "$COVERAGE_INT" -lt "$MIN_COVERAGE" ]; then
+              echo "⚠️ 覆盖率 ${COVERAGE}% < ${MIN_COVERAGE}%（当前前缀非 fix:/done:，仅警告）"
+            else
+              echo "✅ 覆盖率 ${COVERAGE}% ≥ ${MIN_COVERAGE}%"
+            fi
+          fi
+
+      # ==========================================
+      #  构建 APK
+      # ==========================================
       - name: Build APK
         run: flutter build apk --release
 
@@ -43,3 +338,23 @@ jobs:
         with:
           name: lanxi-release
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      # ==========================================
+      #  最终判定
+      # ==========================================
+      - name: Final verdict
+        if: always()
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════╗"
+          echo "║        CI VERDICT（最终判定）           ║"
+          echo "╠══════════════════════════════════════════╣"
+          echo "║  ✅ 全绿 = 真完成 → Merge 按钮亮        ║"
+          echo "║  ❌ 有红 = 假完成 → AI 继续改           ║"
+          echo "║                                          ║"
+          echo "║  用户不需要看报告，只看绿灯。           ║"
+          echo "╚══════════════════════════════════════════╝"
+          echo ""
+          echo "送给 AI 的一句话:"
+          echo "'编译过 ≠ 功能对，测试绿 ≠ 行为对。"
+          echo " 只有删掉实现测试就红的那才是真测试。'"
