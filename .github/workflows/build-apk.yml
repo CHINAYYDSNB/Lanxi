@@ -58,11 +58,12 @@ jobs:
       #  铁律第3条：CI 检测到 wip: 却尝试合并 → 直接 Fail
       #  实现方式：让 build 检查变红，分支保护自动拦截合并
       # ==========================================
-      - name: "⛔ 铁律 Check 0: Block wip:/fix:/feat: from ever merging"
+      - name: "⛔ 铁律 Check 0: Block wip:/fix:/feat:/test: from ever merging"
         run: |
           set -euo pipefail
           echo "⛔ 单人仓库铁律（高于一切）："
-          echo "   含 wip:/fix:/feat: 的 PR 永远禁止合并"
+          echo "   wip:/fix:/feat: → CI 直接红，无 APK"
+          echo "   test:           → CI 最终红(禁合并)，但 APK 正常构建上传供真机验证"
           git fetch --no-tags origin main >/dev/null 2>&1 || true
           base=$(git merge-base origin/main HEAD 2>/dev/null || echo "")
           if [ -n "$base" ]; then
@@ -72,18 +73,23 @@ jobs:
           fi
           # PR 事件中 HEAD 是 merge commit（message 不含前缀），
           # 必须显式检查 GITHUB_SHA（PR 分支头提交，message 含真实前缀），
-          # 否则 wip:/fix:/feat: 会被漏判为通过。
+          # 否则 wip:/fix:/feat:/test: 会被漏判为通过。
           if [ -n "${GITHUB_SHA:-}" ]; then
             msgs+=("$(git show -s --pretty=%s "$GITHUB_SHA" 2>/dev/null || true)")
           fi
-          blocked=0
+          hard_blocked=0
+          test_blocked=0
           for m in "${msgs[@]}"; do
             if [[ "$m" =~ ^(wip|fix|feat)(:|\() ]]; then
               echo "⛔ 铁律违规: 提交 [$m] 使用了禁止合并前缀 wip:/fix:/feat:（含带范围变体 wip(ui):/fix():/feat():）"
-              blocked=1
+              hard_blocked=1
+            fi
+            if [[ "$m" =~ ^test(:|\() ]]; then
+              echo "⚠️  测试模式: 提交 [$m] 使用 test: 前缀，禁止合并，但允许构建 APK 供真机验证"
+              test_blocked=1
             fi
           done
-          if [ "$blocked" -ne 0 ]; then
+          if [ "$hard_blocked" -ne 0 ]; then
             echo ""
             echo "════════════════════════════════"
             echo "  IRON LAW VIOLATION"
@@ -93,7 +99,12 @@ jobs:
             echo "════════════════════════════════"
             exit 1
           fi
-          echo "✅ 铁律检查通过：未检测到禁止合并前缀"
+          if [ "$test_blocked" -ne 0 ]; then
+            echo "IRONLAW_TEST_BLOCKED=1" >> "$GITHUB_ENV"
+            echo "ℹ️  test: 模式 — 放行构建 APK，最终合并仍被禁止"
+          else
+            echo "✅ 铁律检查通过：未检测到禁止合并前缀"
+          fi
 
       - name: "🛡️  Check 1: Ban empty / placeholder implementations"
         run: |
@@ -282,7 +293,7 @@ jobs:
               echo "✅ done: 且覆盖率达标 (${COVERAGE}% >= ${MIN_COVERAGE}%)"
             fi
           else
-            echo "ℹ️  非 done: 提交（wip:/chore:/fix:/feat: 等），覆盖率仅作记录，不卡构建"
+            echo "ℹ️  非 done: 提交（wip:/chore:/fix:/feat:/test: 等），覆盖率仅作记录，不卡构建"
           fi
 
       # ===== 原有 APK 构建（保留你的一切） =====
@@ -294,6 +305,20 @@ jobs:
         with:
           name: lanxi-release
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      # ==========================================
+      #  ⛔ 铁律 Final Block: test: 前缀 — APK 已上传，最终标红禁止合并
+      # ==========================================
+      - name: "⛔ 铁律 Final Block: test: prefix — merge denied, APK available"
+        if: env.IRONLAW_TEST_BLOCKED == '1'
+        run: |
+          echo ""
+          echo "════════════════════════════════"
+          echo "  IRON LAW: test: 前缀禁止合并"
+          echo "  APK 已构建并上传为 Artifact，可供真机验证"
+          echo "  验证通过后请将前缀改为 done: 重新提交"
+          echo "════════════════════════════════"
+          exit 1
 
       # ===== 最终判定（人类可读的总结） =====
       - name: Final verdict
@@ -309,7 +334,7 @@ jobs:
           echo "║  用户不需要看报告，只看绿灯。         ║"
           echo "╚════════════════════════════════════════╝"
           echo ""
-          echo "⛔ 铁律：wip:/fix:/feat: 的 PR 永远合不进去（Merge 按钮必灰）"
+          echo "⛔ 铁律：wip:/fix:/feat:/test: 的 PR 永远合不进去（Merge 按钮必灰）"
           echo ""
           echo "送给 AI 的一句话："
           echo "'编译过 ≠ 功能对，测试绿 ≠ 行为对。"
