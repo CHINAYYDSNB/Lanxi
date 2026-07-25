@@ -70,6 +70,12 @@ jobs:
           else
             mapfile -t msgs < <(git log -1 --pretty=%s)
           fi
+          # PR 事件中 HEAD 是 merge commit（message 不含前缀），
+          # 必须显式检查 GITHUB_SHA（PR 分支头提交，message 含真实前缀），
+          # 否则 wip:/fix:/feat: 会被漏判为通过。
+          if [ -n "${GITHUB_SHA:-}" ]; then
+            msgs+=("$(git show -s --pretty=%s "$GITHUB_SHA" 2>/dev/null || true)")
+          fi
           blocked=0
           for m in "${msgs[@]}"; do
             if [[ "$m" =~ ^(wip|fix|feat): ]]; then
