@@ -16,10 +16,35 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
   bool _manualDisconnect = false;
   bool _isReconnecting = false;
 
-  SshConnectionNotifier() : super(const AsyncValue.data(null)) {
+  /// 可注入依赖（测试时用 mock 替换真实连接/存储）。
+  final SshCommandService Function() _serviceFactory;
+  final StorageService _storage;
+  final List<Duration> _reconnectDelays;
+  final Duration _keepaliveInterval;
+  final bool _enableKeepalive;
+
+  SshConnectionNotifier({
+    SshCommandService Function()? serviceFactory,
+    StorageService? storage,
+    List<Duration>? reconnectDelays,
+    Duration? keepaliveInterval,
+    bool enableKeepalive = true,
+  })  : _serviceFactory = serviceFactory ?? (() => SshCommandService()),
+        _storage = storage ?? StorageService.instance,
+        _reconnectDelays = reconnectDelays ??
+            const [
+              Duration(seconds: 1),
+              Duration(seconds: 2),
+              Duration(seconds: 4),
+              Duration(seconds: 8),
+              Duration(seconds: 16),
+            ],
+        _keepaliveInterval = keepaliveInterval ?? const Duration(seconds: 30),
+        _enableKeepalive = enableKeepalive,
+        super(const AsyncValue.data(null)) {
     WidgetsBinding.instance.addObserver(this);
     _autoConnect();
-    _startKeepalive();
+    if (_enableKeepalive) _startKeepalive();
   }
 
   SshCommandService? get service => _service;
@@ -50,7 +75,7 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
 
   void _startKeepalive() {
     _keepalive?.cancel();
-    _keepalive = Timer.periodic(const Duration(seconds: 20), (_) async {
+    _keepalive = Timer.periodic(_keepaliveInterval, (_) async {
       if (_manualDisconnect) return;
       if (_service?.isConnected == true) {
         final ok = await _service!.ping();
@@ -77,8 +102,7 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
     if (_isReconnecting) return;
     _isReconnecting = true;
     try {
-      final storage = StorageService.instance;
-      final raw = await storage.getSshConnections();
+      final raw = await _storage.getSshConnections();
 
       if (raw != null && raw.isNotEmpty) {
         final first = raw.first;
@@ -91,10 +115,13 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
             password: first['password']?.toString(),
             privateKey: first['privateKey']?.toString(),
           );
-          for (int i = 0; i < 3; i++) {
+          // 指数退避重连：1s→2s→4s→8s→16s 封顶，最多 _reconnectDelays.length 次
+          for (int i = 0; i < _reconnectDelays.length; i++) {
             final err = await connect(config);
             if (err == null) return;
-            if (i < 2) await Future.delayed(Duration(seconds: (i + 1) * 3));
+            if (i < _reconnectDelays.length - 1) {
+              await Future.delayed(_reconnectDelays[i]);
+            }
           }
         }
       }
@@ -110,11 +137,11 @@ class SshConnectionNotifier extends StateNotifier<AsyncValue<SshCommandService?>
     state = const AsyncValue.loading();
     try {
       _service?.disconnect();
-      _service = SshCommandService();
+      _service = _serviceFactory();
       await _service!.connect(config);
       AppContext.i.ssh = _service;
       state = AsyncValue.data(_service);
-      await StorageService.instance.saveSshConnections([config.toJson()]);
+      await _storage.saveSshConnections([config.toJson()]);
       return null;
     } catch (e) {
       state = AsyncValue.error(e, StackTrace.current);
