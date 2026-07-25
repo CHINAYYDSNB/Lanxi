@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: subosito/flutter-action@v2
         with:
@@ -49,6 +51,43 @@ jobs:
       # ==========================================
       #  防骗检查（任何一条红 → 整个 CI 红）
       # ==========================================
+
+      # ==========================================
+      #  ⛔ 单人仓库铁律（高于一切）
+      #  铁律第2条：含 wip:/fix:/feat: 的 PR 永远禁止合并
+      #  铁律第3条：CI 检测到 wip: 却尝试合并 → 直接 Fail
+      #  实现方式：让 build 检查变红，分支保护自动拦截合并
+      # ==========================================
+      - name: "⛔ 铁律 Check 0: Block wip:/fix:/feat: from ever merging"
+        run: |
+          set -euo pipefail
+          echo "⛔ 单人仓库铁律（高于一切）："
+          echo "   含 wip:/fix:/feat: 的 PR 永远禁止合并"
+          git fetch --no-tags origin main >/dev/null 2>&1 || true
+          base=$(git merge-base origin/main HEAD 2>/dev/null || echo "")
+          if [ -n "$base" ]; then
+            mapfile -t msgs < <(git log --pretty=%s "$base..HEAD")
+          else
+            mapfile -t msgs < <(git log -1 --pretty=%s)
+          fi
+          blocked=0
+          for m in "${msgs[@]}"; do
+            if [[ "$m" =~ ^(wip|fix|feat): ]]; then
+              echo "⛔ 铁律违规: 提交 [$m] 使用了禁止合并前缀 wip:/fix:/feat:"
+              blocked=1
+            fi
+          done
+          if [ "$blocked" -ne 0 ]; then
+            echo ""
+            echo "════════════════════════════════"
+            echo "  IRON LAW VIOLATION"
+            echo "  此 PR 含 wip:/fix:/feat: 提交"
+            echo "  CI 直接失败 -> 分支保护拦截合并"
+            echo "  （铁律 高于一切，永远禁止合并）"
+            echo "════════════════════════════════"
+            exit 1
+          fi
+          echo "✅ 铁律检查通过：未检测到禁止合并前缀"
 
       - name: "🛡️  Check 1: Ban empty / placeholder implementations"
         run: |
@@ -200,10 +239,12 @@ jobs:
         continue-on-error: true
 
       # ==========================================
-      #  🛡️  Check 6: fix:/done: 时覆盖率必须达标
-      #  这是用户硬性要求：fix: 或 done: 但覆盖率没达标 → 构建失败
+      #  🛡️  Check 6: done: 时覆盖率必须达标
+      #  铁律第1条：只有功能 100% 完成、行为测试 100% 通过
+      #  才能用 done: 前缀；done: 但覆盖率没达标 → 构建失败
+      #  （fix: 已被铁律 Check 0 永久禁止合并，无需在此处理）
       # ==========================================
-      - name: "🛡️  Check 6: Coverage gate for fix:/done:"
+      - name: "🛡️  Check 6: Coverage gate for done:"
         run: |
           MIN_COVERAGE=70
           echo "计算行覆盖率 (来自 coverage/lcov.info)..."
@@ -221,21 +262,21 @@ jobs:
           echo "📊 行覆盖率: ${COVERAGE}%  (LH=$LH / LF=$LF)  最低要求: ${MIN_COVERAGE}%"
 
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          if echo "$COMMIT_MSG" | grep -qE "^(fix|done):"; then
+          if echo "$COMMIT_MSG" | grep -qE "^done:"; then
             if awk "BEGIN{exit !($COVERAGE < $MIN_COVERAGE)}"; then
               echo ""
               echo "════════════════════════════════"
               echo "  BUILD FAIL: 覆盖率不达标"
-              echo "  commit 前缀 fix:/done: 要求覆盖率 >= ${MIN_COVERAGE}%"
+              echo "  铁律第1条：done: 要求覆盖率 >= ${MIN_COVERAGE}%"
               echo "  当前覆盖率: ${COVERAGE}%"
-              echo "  请补充行为测试后再提交 fix:/done:"
+              echo "  请补充行为测试后再提交 done:"
               echo "════════════════════════════════"
               exit 1
             else
-              echo "✅ fix:/done: 且覆盖率达标 (${COVERAGE}% >= ${MIN_COVERAGE}%)"
+              echo "✅ done: 且覆盖率达标 (${COVERAGE}% >= ${MIN_COVERAGE}%)"
             fi
           else
-            echo "ℹ️  非 fix:/done: 提交，覆盖率仅作记录，不卡构建"
+            echo "ℹ️  非 done: 提交（wip:/chore:/fix:/feat: 等），覆盖率仅作记录，不卡构建"
           fi
 
       # ===== 原有 APK 构建（保留你的一切） =====
@@ -261,6 +302,8 @@ jobs:
           echo "║                                        ║"
           echo "║  用户不需要看报告，只看绿灯。         ║"
           echo "╚════════════════════════════════════════╝"
+          echo ""
+          echo "⛔ 铁律：wip:/fix:/feat: 的 PR 永远合不进去（Merge 按钮必灰）"
           echo ""
           echo "送给 AI 的一句话："
           echo "'编译过 ≠ 功能对，测试绿 ≠ 行为对。"
