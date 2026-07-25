@@ -78,8 +78,8 @@ jobs:
           fi
           blocked=0
           for m in "${msgs[@]}"; do
-            if [[ "$m" =~ ^(wip|fix|feat): ]]; then
-              echo "⛔ 铁律违规: 提交 [$m] 使用了禁止合并前缀 wip:/fix:/feat:"
+            if [[ "$m" =~ ^(wip|fix|feat)(:|\() ]]; then
+              echo "⛔ 铁律违规: 提交 [$m] 使用了禁止合并前缀 wip:/fix:/feat:（含带范围变体 wip(ui):/fix():/feat():）"
               blocked=1
             fi
           done
