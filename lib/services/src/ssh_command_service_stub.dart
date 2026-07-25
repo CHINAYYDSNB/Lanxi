@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:dartssh2/dartssh2.dart';
 import '../../models/ssh_config.dart';
 import '../../models/ssh_result.dart';
@@ -8,6 +9,8 @@ import '../../models/ssh_result.dart';
 class SshCommandService {
   SSHClient? _client;
   bool _connected = false;
+
+  SshCommandService({SSHClient? client}) : _client = client;
 
   bool get isConnected => _connected;
 
@@ -126,6 +129,18 @@ class SshCommandService {
     } catch (e) {
       yield 'Error: $e';
     }
+  }
+
+  /// 通过 SFTP 读取远程文件完整二进制数据（图片预览使用）。
+  ///
+  /// 真实在远端执行 SFTP 读取，返回 Uint8List。未连接时抛 StateError。
+  Future<Uint8List> readFileBytes(String remotePath) async {
+    if (_client == null) {
+      throw StateError('SSH not connected');
+    }
+    final sftp = await _client!.sftp();
+    final file = await sftp.open(remotePath);
+    return file.readBytes();
   }
 
   void disconnect() {

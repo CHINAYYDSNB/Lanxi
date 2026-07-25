@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/context.dart';
+import '../image_preview_page.dart';
 
 class FileListPage extends StatefulWidget {
   const FileListPage({super.key});
@@ -74,6 +75,55 @@ class _FileListPageState extends State<FileListPage> {
     _load();
   }
 
+  Future<void> _openFile(_FileEntry f) async {
+    final path = '$_path/${f.name}';
+    if (f.isDir) {
+      _navigate(f.name);
+      return;
+    }
+    if (_isImageFile(f.name)) {
+      final ssh = AppContext.i.ssh;
+      if (ssh == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('SSH 未连接，无法预览图片')),
+          );
+        }
+        return;
+      }
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ImagePreviewPage(
+              imageData: ssh.readFileBytes(path),
+              name: f.name,
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => FileEditorPage(path: path)),
+      );
+    }
+  }
+
+  bool _isImageFile(String name) {
+    final ext = name.toLowerCase().split('.').last;
+    return const {
+      'png',
+      'jpg',
+      'jpeg',
+      'gif',
+      'bmp',
+      'webp',
+    }.contains(ext);
+  }
+
   void _goHome() { _path = '/'; _load(); }
   Future<void> _delete(_FileEntry f) async {
     final flag = f.isDir ? '-rf' : '-f';
@@ -137,8 +187,7 @@ class _FileListPageState extends State<FileListPage> {
                           title: Text(f.name),
                           subtitle: Text('${f.perms}  ${f.size}  ${f.date}',
                               style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
-                          onTap: f.isDir ? () => _navigate(f.name) : () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => FileEditorPage(path: '$_path/${f.name}'))),
+                          onTap: () => _openFile(f),
                           trailing: IconButton(
                             icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
                             onPressed: () => _delete(f),
